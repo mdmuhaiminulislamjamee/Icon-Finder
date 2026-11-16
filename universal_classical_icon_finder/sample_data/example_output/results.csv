@@ -1,0 +1,9 @@
+icon,platform,confidence,method,raw_score,x1,y1,x2,y2,center_x,center_y,scale,template,processing_time_ms,image_width,image_height,supporting_methods
+volume,generic,1.0,template_matching,1.0,950,566,974,590,962.0,578.0,1.0,icons/volume_light.png,201.572,1280,720,edge_matching;template_matching
+play,generic,1.0,template_matching,1.0,90,170,114,194,102.0,182.0,1.0,icons/play_light.png,236.063,1280,720,edge_matching;template_matching
+favorite,generic,1.0,template_matching,1.0,1060,130,1084,154,1072.0,142.0,1.0,icons/favorite_light.png,232.119,1280,720,edge_matching;template_matching
+play_bar_02,generic,1.0,template_matching,1.0,120,575,288,599,204.0,587.0,1.0,icons/play_bar_02_light.png,254.332,1280,720,edge_matching;template_matching
+play_bar_03,generic,1.0,template_matching,1.0,760,575,928,599,844.0,587.0,1.0,icons/play_bar_03_light.png,240.968,1280,720,edge_matching;template_matching
+fullscreen_corners,generic,0.999999,template_matching,0.999999,1120,566,1144,590,1132.0,578.0,1.0,icons/fullscreen_corners_light.png,200.904,1280,720,edge_matching;template_matching
+pause,generic,0.999999,template_matching,0.999999,470,260,494,284,482.0,272.0,1.0,icons/pause_light.png,242.813,1280,720,edge_matching;template_matching
+play,generic,0.998615,template_matching,0.998615,780,422,816,458,798.0,440.0,1.5,icons/play_light.png,236.063,1280,720,edge_matching;template_matching

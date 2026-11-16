@@ -1,0 +1,19 @@
+{
+  "note": "Float16 files use Float16 weights but retain Float32 input/output tensors.",
+  "controls_progress": {
+    "input_shape": [1, 768, 768, 3],
+    "input_dtype": "float32",
+    "output_shape": [1, 17, 12096],
+    "output_dtype": "float32",
+    "classes": 13,
+    "flex_required": false
+  },
+  "playhead": {
+    "input_shape": [1, 768, 768, 3],
+    "input_dtype": "float32",
+    "output_shape": [1, 5, 12096],
+    "output_dtype": "float32",
+    "classes": 1,
+    "flex_required": false
+  }
+}

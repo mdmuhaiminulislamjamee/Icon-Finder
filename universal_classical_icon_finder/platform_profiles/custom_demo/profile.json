@@ -1,0 +1,159 @@
+{
+  "name": "custom_demo",
+  "description": "Custom example profile using the shared starter artwork; replace with actual platform captures.",
+  "asset_provenance": "Hand-authored approximations of a chat-preview reference; not pixel-exact crops or official platform assets.",
+  "icons": [
+    {
+      "name": "play",
+      "aliases": [
+        "play_button",
+        "start video"
+      ],
+      "category": "Frame 3 · Play & pause",
+      "templates": [
+        "icons/play_light.png",
+        "icons/play_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/play_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/play_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "pause",
+      "aliases": [
+        "pause_button"
+      ],
+      "category": "Frame 3 · Play & pause",
+      "templates": [
+        "icons/pause_light.png",
+        "icons/pause_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/pause_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/pause_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "favorite",
+      "aliases": [
+        "heart"
+      ],
+      "category": "Frame 5 · Reactions",
+      "templates": [
+        "icons/favorite_light.png",
+        "icons/favorite_dark.png",
+        "icons/favorite_active.png"
+      ],
+      "variant_metadata": {
+        "icons/favorite_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/favorite_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/favorite_active.png": {
+          "theme": "light",
+          "state": "active"
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "play_bar_03",
+      "aliases": [],
+      "category": "Play bars 1–4",
+      "templates": [
+        "icons/play_bar_03_light.png",
+        "icons/play_bar_03_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/play_bar_03_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        },
+        "icons/play_bar_03_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": true
+    }
+  ]
+}

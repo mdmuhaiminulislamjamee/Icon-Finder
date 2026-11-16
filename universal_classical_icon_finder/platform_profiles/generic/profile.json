@@ -1,0 +1,731 @@
+{
+  "name": "generic",
+  "description": "Unknown / Generic Platform · Media controls from Frames 1–5 and Play bars 1–4",
+  "asset_provenance": "Hand-authored approximations of a chat-preview reference; not pixel-exact crops or official platform assets.",
+  "icons": [
+    {
+      "name": "fullscreen_diagonal",
+      "aliases": [],
+      "category": "Frame 1 · Full screen",
+      "templates": [
+        "icons/fullscreen_diagonal_light.png",
+        "icons/fullscreen_diagonal_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/fullscreen_diagonal_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/fullscreen_diagonal_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "fullscreen_arrows",
+      "aliases": [],
+      "category": "Frame 1 · Full screen",
+      "templates": [
+        "icons/fullscreen_arrows_light.png",
+        "icons/fullscreen_arrows_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/fullscreen_arrows_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/fullscreen_arrows_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "fullscreen_corners",
+      "aliases": [],
+      "category": "Frame 1 · Full screen",
+      "templates": [
+        "icons/fullscreen_corners_light.png",
+        "icons/fullscreen_corners_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/fullscreen_corners_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/fullscreen_corners_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "fullscreen_window",
+      "aliases": [],
+      "category": "Frame 1 · Full screen",
+      "templates": [
+        "icons/fullscreen_window_light.png",
+        "icons/fullscreen_window_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/fullscreen_window_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/fullscreen_window_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "volume",
+      "aliases": [],
+      "category": "Frame 2 · Volume",
+      "templates": [
+        "icons/volume_light.png",
+        "icons/volume_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/volume_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/volume_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "volume_muted",
+      "aliases": [
+        "mute",
+        "muted"
+      ],
+      "category": "Frame 2 · Volume",
+      "templates": [
+        "icons/volume_muted_light.png",
+        "icons/volume_muted_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/volume_muted_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/volume_muted_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "play",
+      "aliases": [
+        "play_button",
+        "start video"
+      ],
+      "category": "Frame 3 · Play & pause",
+      "templates": [
+        "icons/play_light.png",
+        "icons/play_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/play_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/play_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "pause",
+      "aliases": [
+        "pause_button"
+      ],
+      "category": "Frame 3 · Play & pause",
+      "templates": [
+        "icons/pause_light.png",
+        "icons/pause_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/pause_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/pause_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "previous",
+      "aliases": [],
+      "category": "Frame 4 · Navigation",
+      "templates": [
+        "icons/previous_light.png",
+        "icons/previous_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/previous_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/previous_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "next",
+      "aliases": [],
+      "category": "Frame 4 · Navigation",
+      "templates": [
+        "icons/next_light.png",
+        "icons/next_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/next_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/next_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "fast_forward",
+      "aliases": [],
+      "category": "Frame 4 · Navigation",
+      "templates": [
+        "icons/fast_forward_light.png",
+        "icons/fast_forward_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/fast_forward_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/fast_forward_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "skip_backward_10",
+      "aliases": [],
+      "category": "Frame 4 · Navigation",
+      "templates": [
+        "icons/skip_backward_10_light.png",
+        "icons/skip_backward_10_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/skip_backward_10_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/skip_backward_10_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "skip_forward_10",
+      "aliases": [],
+      "category": "Frame 4 · Navigation",
+      "templates": [
+        "icons/skip_forward_10_light.png",
+        "icons/skip_forward_10_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/skip_forward_10_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/skip_forward_10_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "like",
+      "aliases": [
+        "thumbs up"
+      ],
+      "category": "Frame 5 · Reactions",
+      "templates": [
+        "icons/like_light.png",
+        "icons/like_dark.png",
+        "icons/like_active.png"
+      ],
+      "variant_metadata": {
+        "icons/like_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/like_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/like_active.png": {
+          "theme": "light",
+          "state": "active"
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "dislike",
+      "aliases": [
+        "thumbs down"
+      ],
+      "category": "Frame 5 · Reactions",
+      "templates": [
+        "icons/dislike_light.png",
+        "icons/dislike_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/dislike_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/dislike_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "favorite",
+      "aliases": [
+        "heart"
+      ],
+      "category": "Frame 5 · Reactions",
+      "templates": [
+        "icons/favorite_light.png",
+        "icons/favorite_dark.png",
+        "icons/favorite_active.png"
+      ],
+      "variant_metadata": {
+        "icons/favorite_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/favorite_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            24,
+            24
+          ]
+        },
+        "icons/favorite_active.png": {
+          "theme": "light",
+          "state": "active"
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": false
+    },
+    {
+      "name": "play_bar_01",
+      "aliases": [],
+      "category": "Play bars 1–4",
+      "templates": [
+        "icons/play_bar_01_light.png",
+        "icons/play_bar_01_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/play_bar_01_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        },
+        "icons/play_bar_01_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": true
+    },
+    {
+      "name": "play_bar_02",
+      "aliases": [],
+      "category": "Play bars 1–4",
+      "templates": [
+        "icons/play_bar_02_light.png",
+        "icons/play_bar_02_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/play_bar_02_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        },
+        "icons/play_bar_02_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": true
+    },
+    {
+      "name": "play_bar_03",
+      "aliases": [],
+      "category": "Play bars 1–4",
+      "templates": [
+        "icons/play_bar_03_light.png",
+        "icons/play_bar_03_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/play_bar_03_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        },
+        "icons/play_bar_03_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": true
+    },
+    {
+      "name": "play_bar_04",
+      "aliases": [],
+      "category": "Play bars 1–4",
+      "templates": [
+        "icons/play_bar_04_light.png",
+        "icons/play_bar_04_dark.png"
+      ],
+      "variant_metadata": {
+        "icons/play_bar_04_light.png": {
+          "theme": "light",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        },
+        "icons/play_bar_04_dark.png": {
+          "theme": "dark",
+          "state": "default",
+          "resolution": [
+            168,
+            24
+          ]
+        }
+      },
+      "enabled_methods": [
+        "template_matching",
+        "edge_matching",
+        "shape_matching",
+        "feature_matching"
+      ],
+      "default_threshold": 0.86,
+      "color_sensitive": true
+    }
+  ]
+}

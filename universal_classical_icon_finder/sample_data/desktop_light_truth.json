@@ -1,0 +1,74 @@
+[
+  {
+    "icon": "play",
+    "bounding_box": {
+      "x1": 90,
+      "y1": 170,
+      "x2": 114,
+      "y2": 194
+    }
+  },
+  {
+    "icon": "play",
+    "bounding_box": {
+      "x1": 780,
+      "y1": 422,
+      "x2": 816,
+      "y2": 458
+    }
+  },
+  {
+    "icon": "pause",
+    "bounding_box": {
+      "x1": 470,
+      "y1": 260,
+      "x2": 494,
+      "y2": 284
+    }
+  },
+  {
+    "icon": "volume",
+    "bounding_box": {
+      "x1": 950,
+      "y1": 566,
+      "x2": 974,
+      "y2": 590
+    }
+  },
+  {
+    "icon": "favorite",
+    "bounding_box": {
+      "x1": 1060,
+      "y1": 130,
+      "x2": 1084,
+      "y2": 154
+    }
+  },
+  {
+    "icon": "fullscreen_corners",
+    "bounding_box": {
+      "x1": 1120,
+      "y1": 566,
+      "x2": 1144,
+      "y2": 590
+    }
+  },
+  {
+    "icon": "play_bar_02",
+    "bounding_box": {
+      "x1": 120,
+      "y1": 575,
+      "x2": 288,
+      "y2": 599
+    }
+  },
+  {
+    "icon": "play_bar_03",
+    "bounding_box": {
+      "x1": 760,
+      "y1": 575,
+      "x2": 928,
+      "y2": 599
+    }
+  }
+]

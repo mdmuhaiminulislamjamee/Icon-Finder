@@ -1,0 +1,226 @@
+[
+  {
+    "icon": "volume",
+    "platform": "generic",
+    "method": "template_matching",
+    "raw_score": 1.0,
+    "confidence": 1.0,
+    "bounding_box": {
+      "x1": 950,
+      "y1": 566,
+      "x2": 974,
+      "y2": 590
+    },
+    "center": {
+      "x": 962.0,
+      "y": 578.0
+    },
+    "scale": 1.0,
+    "template": "icons/volume_light.png",
+    "processing_time_ms": 201.572,
+    "supporting_methods": [
+      "edge_matching",
+      "template_matching"
+    ],
+    "image_size": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  {
+    "icon": "play",
+    "platform": "generic",
+    "method": "template_matching",
+    "raw_score": 1.0,
+    "confidence": 1.0,
+    "bounding_box": {
+      "x1": 90,
+      "y1": 170,
+      "x2": 114,
+      "y2": 194
+    },
+    "center": {
+      "x": 102.0,
+      "y": 182.0
+    },
+    "scale": 1.0,
+    "template": "icons/play_light.png",
+    "processing_time_ms": 236.063,
+    "supporting_methods": [
+      "edge_matching",
+      "template_matching"
+    ],
+    "image_size": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  {
+    "icon": "favorite",
+    "platform": "generic",
+    "method": "template_matching",
+    "raw_score": 1.0,
+    "confidence": 1.0,
+    "bounding_box": {
+      "x1": 1060,
+      "y1": 130,
+      "x2": 1084,
+      "y2": 154
+    },
+    "center": {
+      "x": 1072.0,
+      "y": 142.0
+    },
+    "scale": 1.0,
+    "template": "icons/favorite_light.png",
+    "processing_time_ms": 232.119,
+    "supporting_methods": [
+      "edge_matching",
+      "template_matching"
+    ],
+    "image_size": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  {
+    "icon": "play_bar_02",
+    "platform": "generic",
+    "method": "template_matching",
+    "raw_score": 1.0,
+    "confidence": 1.0,
+    "bounding_box": {
+      "x1": 120,
+      "y1": 575,
+      "x2": 288,
+      "y2": 599
+    },
+    "center": {
+      "x": 204.0,
+      "y": 587.0
+    },
+    "scale": 1.0,
+    "template": "icons/play_bar_02_light.png",
+    "processing_time_ms": 254.332,
+    "supporting_methods": [
+      "edge_matching",
+      "template_matching"
+    ],
+    "image_size": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  {
+    "icon": "play_bar_03",
+    "platform": "generic",
+    "method": "template_matching",
+    "raw_score": 1.0,
+    "confidence": 1.0,
+    "bounding_box": {
+      "x1": 760,
+      "y1": 575,
+      "x2": 928,
+      "y2": 599
+    },
+    "center": {
+      "x": 844.0,
+      "y": 587.0
+    },
+    "scale": 1.0,
+    "template": "icons/play_bar_03_light.png",
+    "processing_time_ms": 240.968,
+    "supporting_methods": [
+      "edge_matching",
+      "template_matching"
+    ],
+    "image_size": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  {
+    "icon": "fullscreen_corners",
+    "platform": "generic",
+    "method": "template_matching",
+    "raw_score": 0.999999,
+    "confidence": 0.999999,
+    "bounding_box": {
+      "x1": 1120,
+      "y1": 566,
+      "x2": 1144,
+      "y2": 590
+    },
+    "center": {
+      "x": 1132.0,
+      "y": 578.0
+    },
+    "scale": 1.0,
+    "template": "icons/fullscreen_corners_light.png",
+    "processing_time_ms": 200.904,
+    "supporting_methods": [
+      "edge_matching",
+      "template_matching"
+    ],
+    "image_size": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  {
+    "icon": "pause",
+    "platform": "generic",
+    "method": "template_matching",
+    "raw_score": 0.999999,
+    "confidence": 0.999999,
+    "bounding_box": {
+      "x1": 470,
+      "y1": 260,
+      "x2": 494,
+      "y2": 284
+    },
+    "center": {
+      "x": 482.0,
+      "y": 272.0
+    },
+    "scale": 1.0,
+    "template": "icons/pause_light.png",
+    "processing_time_ms": 242.813,
+    "supporting_methods": [
+      "edge_matching",
+      "template_matching"
+    ],
+    "image_size": {
+      "width": 1280,
+      "height": 720
+    }
+  },
+  {
+    "icon": "play",
+    "platform": "generic",
+    "method": "template_matching",
+    "raw_score": 0.998615,
+    "confidence": 0.998615,
+    "bounding_box": {
+      "x1": 780,
+      "y1": 422,
+      "x2": 816,
+      "y2": 458
+    },
+    "center": {
+      "x": 798.0,
+      "y": 440.0
+    },
+    "scale": 1.5,
+    "template": "icons/play_light.png",
+    "processing_time_ms": 236.063,
+    "supporting_methods": [
+      "edge_matching",
+      "template_matching"
+    ],
+    "image_size": {
+      "width": 1280,
+      "height": 720
+    }
+  }
+]

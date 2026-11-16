@@ -1,0 +1,33 @@
+{
+  "input_size": [768, 768],
+  "color": "RGB",
+  "normalization": "float32 / 255.0",
+  "letterbox_pad_rgb": [114, 114, 114],
+  "nms": {
+    "class_aware": true,
+    "iou_threshold": 0.7,
+    "max_detections": 300
+  },
+  "models": {
+    "controls_progress": {
+      "classes": [
+        "play", "pause", "volume_on", "volume_muted", "fullscreen",
+        "exit_fullscreen", "previous", "next", "like", "dislike",
+        "seek_backward", "seek_forward", "progress_bar"
+      ],
+      "confidence_threshold": 0.25,
+      "output_shape": [1, 17, 12096],
+      "output_layout": "B,(xywh + 13 class scores),N",
+      "onnx_input": {"shape": [1, 3, 768, 768], "layout": "NCHW", "dtype": "float32"},
+      "tflite_input": {"shape": [1, 768, 768, 3], "layout": "NHWC", "dtype": "float32"}
+    },
+    "playhead": {
+      "classes": ["playhead"],
+      "confidence_threshold": 0.2,
+      "output_shape": [1, 5, 12096],
+      "output_layout": "B,(xywh + 1 class score),N",
+      "onnx_input": {"shape": [1, 3, 768, 768], "layout": "NCHW", "dtype": "float32"},
+      "tflite_input": {"shape": [1, 768, 768, 3], "layout": "NHWC", "dtype": "float32"}
+    }
+  }
+}

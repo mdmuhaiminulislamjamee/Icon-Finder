@@ -1,0 +1,46 @@
+{
+  "delivery": "youtube_media_control_models_v11_768",
+  "architecture": "V1-style YOLO26n controls+progress plus YOLO11n playhead specialist",
+  "dataset": "youtube current_v11 frozen",
+  "input_size": [768, 768],
+  "deployment_formats": ["onnx", "tflite"],
+  "pytorch_included": false,
+  "saved_model_included": false,
+  "flex_required": false,
+  "recommended_acceptance_pair": [
+    "models/tflite/youtube_controls_progress_float32.tflite",
+    "models/tflite/youtube_playhead_float32.tflite"
+  ],
+  "artifacts": [
+    {
+      "path": "models/onnx/youtube_controls_progress.onnx",
+      "bytes": 9915340,
+      "sha256": "1c1c97181ff8a8a7c675dc3ee057bd14186060dca9f16c978bd4235e8d1e2ed9"
+    },
+    {
+      "path": "models/onnx/youtube_playhead.onnx",
+      "bytes": 10718122,
+      "sha256": "c0917a4ad7eb23d114b543233de82657b19f5e4533772f2fdd3cd0935e8998c2"
+    },
+    {
+      "path": "models/tflite/youtube_controls_progress_float32.tflite",
+      "bytes": 9810466,
+      "sha256": "0b8379b1879839e15681f3f10d9fc3dc9082ddd78d499de38f801a0af59a59ec"
+    },
+    {
+      "path": "models/tflite/youtube_controls_progress_float16.tflite",
+      "bytes": 4976358,
+      "sha256": "5e4a0784927d83e35f0b11bddbb9d328be0197ab60fdbc17feb6d36eddac8656"
+    },
+    {
+      "path": "models/tflite/youtube_playhead_float32.tflite",
+      "bytes": 10613757,
+      "sha256": "cee8e566fbe942eb87c876808feb95398ed20c90686b7f6219c9889c0a37e15d"
+    },
+    {
+      "path": "models/tflite/youtube_playhead_float16.tflite",
+      "bytes": 5367669,
+      "sha256": "2dc803409515b6b9dd86e167ca880245c6ad75a4e09b3f2d3b9e0825d5e72215"
+    }
+  ]
+}

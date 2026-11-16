@@ -1,0 +1,25 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.test_tmp/
+.ipynb_checkpoints/
+
+# Temporary / OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Third-party cloned repositories (Colab clones fresh during run)
+OmniParser/
+
+# Redundant duplicate zip archives
+*.zip
