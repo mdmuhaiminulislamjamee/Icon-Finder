@@ -236,6 +236,37 @@ def select_one_playhead(
     return [max(candidates, key=lambda item: (item.score, -abs((item.box[1] + item.box[3]) / 2 - center_y)))]
 
 
+def get_video_type_flag(image_shape: tuple[int, int], detections: list[Detection]) -> int:
+    """
+    Determines whether the screenshot is a Regular / Long Video or YouTube Short.
+    Returns:
+        0: Regular / Long Video
+        1: YouTube Short
+    """
+    height, width = image_shape[:2]
+    labels = {item.label for item in detections}
+
+    # If any regular controls are present -> 100% Long Video (0)
+    regular_controls = {"fullscreen", "exit_fullscreen", "next", "previous", "seek_backward", "seek_forward"}
+    if labels.intersection(regular_controls):
+        return 0
+
+    # If vertical action rail (like & dislike stacked on right edge) -> Short (1)
+    likes = [item for item in detections if item.label == "like"]
+    dislikes = [item for item in detections if item.label == "dislike"]
+    if likes and dislikes:
+        if (likes[0].box[0] > 0.70 * width) and (dislikes[0].box[0] > 0.70 * width):
+            if dislikes[0].box[1] > likes[0].box[1]:
+                return 1
+
+    # Aspect ratio check: Phone vertical 9:16 (W/H < 0.75) -> Short (1)
+    if (width / height) < 0.75:
+        return 1
+
+    # Default to Long Video (0)
+    return 0
+
+
 def _font(size: int, bold: bool = False):
     filename = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
     path = Path("/usr/share/fonts/truetype/dejavu") / filename
@@ -361,8 +392,13 @@ def main() -> None:
     detections = controls + playhead
     detections.sort(key=lambda item: (item.box[1], item.box[0]))
 
+    is_short_flag = get_video_type_flag(rgb.shape, detections)
+
     payload = {
         "image": str(args.image),
+        "image_size": [bgr.shape[1], bgr.shape[0]],
+        "is_short": is_short_flag,
+        "video_type": "Short" if is_short_flag == 1 else "Long",
         "backend": args.backend,
         "precision": args.precision if args.backend == "tflite" else "float32",
         "input_size": [INPUT_SIZE, INPUT_SIZE],
