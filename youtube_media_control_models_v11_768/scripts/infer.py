@@ -238,32 +238,43 @@ def select_one_playhead(
 
 def get_video_type_flag(image_shape: tuple[int, int], detections: list[Detection]) -> int:
     """
-    Determines whether the screenshot is a Regular / Long Video or YouTube Short.
-    Returns:
-        0: Regular / Long Video
-        1: YouTube Short
+    Robust Video Type Classifier (0: Long Video, 1: YouTube Short).
+    Works on full-size desktop and mobile screenshots across all aspect ratios.
     """
     height, width = image_shape[:2]
     labels = {item.label for item in detections}
 
-    # 1. If any regular player controls are present -> 100% Long Video (0)
-    regular_controls = {"fullscreen", "exit_fullscreen", "next", "previous", "seek_backward", "seek_forward"}
-    if labels.intersection(regular_controls):
+    # Rule 1: Hard indicators for Long Video (these controls NEVER exist in Shorts)
+    long_controls = {"fullscreen", "exit_fullscreen", "next", "previous", "seek_backward", "seek_forward"}
+    if labels.intersection(long_controls):
         return 0
 
-    # 2. If Like icon is on the right-hand action rail (> 65% width) -> Short (1)
+    # Rule 2: Progress bar width ratio (Primary Desktop Discriminant)
+    # On desktop Long video, the progress bar spans >= 40% of the screen width.
+    # On desktop Shorts, the progress bar only spans the 9:16 vertical card (20-30% of screen).
+    bars = [item for item in detections if item.label == "progress_bar"]
+    if bars:
+        bar_w = bars[0].box[2] - bars[0].box[0]
+        bar_ratio = bar_w / width
+        if bar_ratio >= 0.40 and (width >= height):
+            return 0  # Wide progress bar on landscape screen -> Long Video
+        elif bar_ratio < 0.35 and (width >= height):
+            return 1  # Narrow progress bar on landscape screen -> Shorts vertical card
+
+    # Rule 3: Mobile Portrait layout check
+    aspect_ratio = width / height
+    if aspect_ratio < 0.75:
+        # On a vertical mobile screen, if no long-video controls are present -> Short
+        return 1
+
+    # Rule 4: Shorts Action Rail (Like button position on Desktop and Mobile)
+    # On desktop Shorts, the Like button sits in the center-right column (50% to 95% width).
+    # On mobile Shorts, it sits on the right edge (> 70% width).
     likes = [item for item in detections if item.label == "like"]
-    if likes and likes[0].box[0] > (0.65 * width):
-        return 1
-
-    # 3. If Dislike icon is on the right-hand action rail (> 65% width) -> Short (1)
-    dislikes = [item for item in detections if item.label == "dislike"]
-    if dislikes and dislikes[0].box[0] > (0.65 * width):
-        return 1
-
-    # 4. Aspect ratio check: Vertical mobile/card format (W/H < 0.85) -> Short (1)
-    if (width / height) < 0.85:
-        return 1
+    if likes:
+        lx = likes[0].box[0]
+        if 0.50 * width < lx < 0.98 * width:
+            return 1
 
     # Default to Long Video (0)
     return 0
