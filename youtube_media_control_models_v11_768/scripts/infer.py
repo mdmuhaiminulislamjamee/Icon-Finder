@@ -246,21 +246,23 @@ def get_video_type_flag(image_shape: tuple[int, int], detections: list[Detection
     height, width = image_shape[:2]
     labels = {item.label for item in detections}
 
-    # If any regular controls are present -> 100% Long Video (0)
+    # 1. If any regular player controls are present -> 100% Long Video (0)
     regular_controls = {"fullscreen", "exit_fullscreen", "next", "previous", "seek_backward", "seek_forward"}
     if labels.intersection(regular_controls):
         return 0
 
-    # If vertical action rail (like & dislike stacked on right edge) -> Short (1)
+    # 2. If Like icon is on the right-hand action rail (> 65% width) -> Short (1)
     likes = [item for item in detections if item.label == "like"]
-    dislikes = [item for item in detections if item.label == "dislike"]
-    if likes and dislikes:
-        if (likes[0].box[0] > 0.70 * width) and (dislikes[0].box[0] > 0.70 * width):
-            if dislikes[0].box[1] > likes[0].box[1]:
-                return 1
+    if likes and likes[0].box[0] > (0.65 * width):
+        return 1
 
-    # Aspect ratio check: Phone vertical 9:16 (W/H < 0.75) -> Short (1)
-    if (width / height) < 0.75:
+    # 3. If Dislike icon is on the right-hand action rail (> 65% width) -> Short (1)
+    dislikes = [item for item in detections if item.label == "dislike"]
+    if dislikes and dislikes[0].box[0] > (0.65 * width):
+        return 1
+
+    # 4. Aspect ratio check: Vertical mobile/card format (W/H < 0.85) -> Short (1)
+    if (width / height) < 0.85:
         return 1
 
     # Default to Long Video (0)
