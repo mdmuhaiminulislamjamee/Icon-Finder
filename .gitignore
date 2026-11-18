@@ -17,6 +17,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.tmp
+._*
 
 # Third-party cloned repositories (Colab clones fresh during run)
 OmniParser/

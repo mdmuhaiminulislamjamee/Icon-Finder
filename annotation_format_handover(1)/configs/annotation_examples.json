@@ -1,0 +1,26 @@
+{
+  "title": "MediaControlDetector annotation-format handover",
+  "examples": [
+    {
+      "platform": "youtube",
+      "device": "desktop",
+      "content_format": "full_video",
+      "record_id": "media_web_states_v2__youtube__sports__c3d12318af24__fhd_fullscreen_playing",
+      "purpose": "Desktop full-video example with a broad resolved control set."
+    },
+    {
+      "platform": "youtube",
+      "device": "phone",
+      "content_format": "short_video",
+      "record_id": "youtube_android_000257",
+      "purpose": "Phone Shorts example with a muted toolbar state and curated seek geometry."
+    },
+    {
+      "platform": "youtube",
+      "device": "tablet",
+      "content_format": "short_video",
+      "record_id": "youtube_android_000281",
+      "purpose": "Tablet Shorts example using the same curated annotation schema."
+    }
+  ]
+}

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MediaControl Studio — iOS Dataset & Curation Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="navbar">
+    <div class="nav-left">
+      <div class="brand">
+        <span class="brand-icon">🎯</span>
+        <span class="brand-title">MediaControl Studio</span>
+        <span class="brand-badge">iOS &middot; YOLO V11/V12</span>
+      </div>
+    </div>
+
+    <div class="nav-center">
+      <div id="device-pill" class="device-pill disconnected">
+        <span class="status-dot"></span>
+        <span id="device-text">Checking device...</span>
+      </div>
+    </div>
+
+    <div class="nav-right">
+      <button class="btn btn-secondary" id="btn-sync-device" title="Pull all captures and annotations from iPad">
+        <span class="icon">📥</span> Sync iPad Files
+      </button>
+      <button class="btn btn-secondary" id="btn-refresh" title="Reload records">
+        <span class="icon">🔄</span> Refresh
+      </button>
+      <button class="btn btn-primary" id="btn-open-package-modal">
+        <span class="icon">📦</span> Package Handover
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="container">
+
+    <!-- Top Grid: Live Monitor + Capture Station -->
+    <section class="top-grid">
+      
+      <!-- Live iOS Monitor Card -->
+      <div class="card monitor-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>📱 Live iOS Device Screen</h3>
+            <span class="card-subtitle">Real-time video & UI monitor over USB</span>
+          </div>
+          <div class="monitor-controls">
+            <button class="btn btn-sm btn-primary" id="btn-toggle-stream">
+              <span id="stream-icon">▶</span> <span id="stream-btn-text">Start Live Stream</span>
+            </button>
+            <button class="btn btn-sm btn-ghost" id="btn-snap-frame" title="Snapshot current screen">
+              📸 Snapshot
+            </button>
+          </div>
+        </div>
+
+        <div class="monitor-viewport" id="monitor-viewport">
+          <div id="monitor-placeholder" class="monitor-placeholder">
+            <div class="placeholder-content">
+              <span class="placeholder-icon">📺</span>
+              <p>Device stream is paused</p>
+              <button class="btn btn-sm btn-primary" id="btn-placeholder-start" onclick="toggleStream(true)">
+                ▶ Start Live Stream
+              </button>
+            </div>
+          </div>
+          <img id="live-screen-img" class="live-screen-img hidden" alt="Live iOS Screen" />
+          <div id="monitor-overlay-bar" class="monitor-overlay-bar hidden">
+            <div class="stream-badge">
+              <span class="live-pulse"></span> LIVE <span id="stream-fps">-- fps</span>
+            </div>
+            <div class="monitor-overlay-actions">
+              <button class="btn-overlay" id="btn-view-mode" onclick="toggleViewMode()" title="Toggle Fit or Fill mode">
+                🔍 Fit
+              </button>
+              <button class="btn-overlay" id="btn-fullscreen" onclick="toggleFullscreen()" title="Fullscreen mode">
+                ⛶ Fullscreen
+              </button>
+              <button class="btn-overlay btn-overlay-danger" id="btn-overlay-stop" onclick="stopStream()" title="Stop Live Stream">
+                ⏹ Stop Stream
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Capture Control Station Card -->
+      <div class="card capture-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>⚡ Capture Station</h3>
+            <span class="card-subtitle">Single shot or continuous automated session</span>
+          </div>
+          <!-- Mode Tabs -->
+          <div class="mode-tabs">
+            <button class="tab-btn active" id="tab-mode-single" onclick="setCaptureMode('single')">Single Shot</button>
+            <button class="tab-btn" id="tab-mode-auto" onclick="setCaptureMode('auto')">Auto-Capture (Loop)</button>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cap-platform">Platform</label>
+              <select id="cap-platform" class="select-input">
+                <option value="youtube" selected>YouTube</option>
+                <option value="tiktok">TikTok</option>
+                <option value="instagram">Instagram</option>
+                <option value="netflix">Netflix</option>
+                <option value="spotify">Spotify</option>
+                <option value="twitch">Twitch</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="cap-device">Device Type</label>
+              <select id="cap-device" class="select-input">
+                <option value="tablet" selected>Tablet (iPad)</option>
+                <option value="phone">Phone (iPhone)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cap-format">Content Format</label>
+              <select id="cap-format" class="select-input">
+                <option value="short_video" selected>Shorts / Reel (short_video)</option>
+                <option value="full_video">Full Player (full_video)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="cap-state">Capture State</label>
+              <select id="cap-state" class="select-input">
+                <option value="playing_controls_visible" selected>Playing &bull; Controls Visible</option>
+                <option value="paused_controls_visible">Paused &bull; Controls Visible</option>
+                <option value="ad_playing_skip_available">Ad Playing &bull; Skip Ad Button</option>
+                <option value="playing_muted">Playing &bull; Volume Muted</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Single Capture Controls -->
+          <div id="section-single-capture" class="action-box">
+            <button id="btn-trigger-capture" class="btn btn-xl btn-accent">
+              <span class="icon">📸</span> Trigger Single Capture (4s)
+            </button>
+            <div id="countdown-overlay" class="countdown-overlay hidden">
+              <div class="countdown-bar" id="countdown-bar"></div>
+              <span id="countdown-text">Tap iPad screen to show controls! (4s)</span>
+            </div>
+          </div>
+
+          <!-- Continuous Auto-Capture Controls -->
+          <div id="section-auto-capture" class="auto-capture-box hidden">
+            <div class="auto-interval-row">
+              <label>Capture Interval:</label>
+              <select id="auto-interval-select" class="select-sm">
+                <option value="4">Every 4 seconds</option>
+                <option value="5" selected>Every 5 seconds</option>
+                <option value="7">Every 7 seconds</option>
+                <option value="10">Every 10 seconds</option>
+              </select>
+              <span class="session-badge" id="auto-counter-badge">Session: 0 frames</span>
+            </div>
+
+            <div class="auto-btn-group">
+              <button id="btn-start-auto" class="btn btn-xl btn-success">
+                ▶ Start Auto-Capture Loop
+              </button>
+              <button id="btn-stop-auto" class="btn btn-xl btn-danger hidden">
+                ⏹ Stop Auto-Capture
+              </button>
+            </div>
+            <p class="auto-hint">While running, you can swipe up/down, pause, play, or scrub on the iPad. The system will snap 1 frame every 5s automatically!</p>
+          </div>
+
+          <div id="capture-status-box" class="status-box hidden">
+            <div class="status-header">
+              <span id="capture-status-title">Running capture runner...</span>
+              <button class="btn btn-xs btn-ghost" onclick="toggleLog()">View Log</button>
+            </div>
+            <pre id="capture-log" class="capture-log hidden"></pre>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Bottom Section: Dataset Gallery & Management -->
+    <section class="dataset-section">
+      <div class="section-header">
+        <div class="section-title-group">
+          <h2>📂 Captured Dataset & Annotations</h2>
+          <span class="record-counter" id="record-count-badge">0 frames collected</span>
+        </div>
+
+        <!-- Filter & Search Bar -->
+        <div class="filters-bar">
+          <div class="filter-group">
+            <label>Platform:</label>
+            <select id="filter-platform" class="select-sm">
+              <option value="all">All Platforms</option>
+              <option value="youtube">YouTube</option>
+              <option value="tiktok">TikTok</option>
+              <option value="instagram">Instagram</option>
+              <option value="netflix">Netflix</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label>Format:</label>
+            <select id="filter-format" class="select-sm">
+              <option value="all">All Formats</option>
+              <option value="short_video">Shorts</option>
+              <option value="full_video">Full Video</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label>Orientation:</label>
+            <select id="filter-orientation" class="select-sm">
+              <option value="all">All Orientations</option>
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label>Has Class:</label>
+            <select id="filter-class" class="select-sm">
+              <option value="all">All Classes</option>
+              <option value="skip_ad">skip_ad (Skip Button)</option>
+              <option value="progress_bar">progress_bar</option>
+              <option value="playhead">playhead</option>
+              <option value="play">play</option>
+              <option value="pause">pause</option>
+              <option value="like">like</option>
+              <option value="volume_muted">volume_muted</option>
+            </select>
+          </div>
+
+          <div class="filter-group">
+            <label>Status:</label>
+            <select id="filter-status" class="select-sm">
+              <option value="all">All Statuses</option>
+              <option value="curated">Curated Only</option>
+              <option value="raw">Raw Only</option>
+            </select>
+          </div>
+
+          <div class="search-box">
+            <input type="text" id="filter-search" placeholder="Search record ID..." class="input-sm" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Gallery Grid -->
+      <div id="gallery-grid" class="gallery-grid">
+        <!-- Rendered dynamically via JavaScript -->
+      </div>
+      <div id="empty-state" class="empty-state hidden">
+        <span class="empty-icon">📭</span>
+        <h3>No captured frames found</h3>
+        <p>Take a screenshot above or copy your <code>data</code> folder from your iPad to populate the library.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: Full Screen Annotation Inspector & Editor -->
+  <div id="editor-modal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeEditor()"></div>
+    <div class="modal-dialog editor-dialog">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h3 id="modal-record-title">youtube_ios_000000</h3>
+          <span id="modal-meta-tag" class="badge">YouTube &bull; Tablet</span>
+        </div>
+        <div class="modal-header-actions">
+          <button class="btn btn-sm btn-success" id="btn-save-curation">
+            💾 Save Curation
+          </button>
+          <button class="btn btn-sm btn-ghost" onclick="closeEditor()">✕</button>
+        </div>
+      </div>
+
+      <div class="editor-body">
+        <!-- Canvas Area -->
+        <div class="canvas-container" id="canvas-container">
+          <canvas id="annotation-canvas"></canvas>
+          <div id="canvas-draw-hint" class="canvas-hint">Drag mouse on screen to draw a new box</div>
+        </div>
+
+        <!-- Sidebar Inspector -->
+        <aside class="editor-sidebar">
+          <div class="sidebar-block">
+            <h4>Add New Box</h4>
+            <div class="form-group">
+              <label>Target Class</label>
+              <select id="draw-class-select" class="select-sm">
+                <option value="skip_ad">skip_ad (Skip Ad Button)</option>
+                <option value="progress_bar">progress_bar</option>
+                <option value="playhead">playhead</option>
+                <option value="play">play</option>
+                <option value="pause">pause</option>
+                <option value="volume_on">volume_on</option>
+                <option value="volume_muted">volume_muted</option>
+                <option value="fullscreen">fullscreen</option>
+                <option value="exit_fullscreen">exit_fullscreen</option>
+                <option value="like">like</option>
+                <option value="dislike">dislike</option>
+                <option value="comments">comments</option>
+                <option value="share">share</option>
+                <option value="remix">remix</option>
+                <option value="sound">sound</option>
+                <option value="save">save</option>
+                <option value="search">search</option>
+                <option value="more_options">more_options</option>
+              </select>
+            </div>
+            <p class="help-text">Select class, then click & drag over the image to draw.</p>
+          </div>
+
+          <div class="sidebar-block">
+            <h4>Annotations (<span id="box-count">0</span>)</h4>
+            <div id="annotation-list" class="annotation-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <div class="sidebar-block">
+            <h4>Curation Meta</h4>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="curation-status-select" class="select-sm">
+                <option value="approved">approved (Ground Truth Ready)</option>
+                <option value="resolved">resolved</option>
+                <option value="needs_review">needs_review</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Notes</label>
+              <textarea id="curation-notes-input" class="textarea-sm" rows="2" placeholder="e.g. Added skip_ad button and adjusted playhead"></textarea>
+            </div>
+          </div>
+
+          <div class="sidebar-footer">
+            <button class="btn btn-sm btn-danger btn-block" id="btn-delete-frame">
+              🗑️ Delete This Frame
+            </button>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Package Handover -->
+  <div id="package-modal" class="modal hidden">
+    <div class="modal-backdrop" onclick="closePackageModal()"></div>
+    <div class="modal-dialog package-dialog">
+      <div class="modal-header">
+        <h3>📦 Generate Dataset Handover Package</h3>
+        <button class="btn btn-sm btn-ghost" onclick="closePackageModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p>This will compute cryptographic <strong>SHA256 checksums</strong>, compile annotation counts, and build a clean ZIP package ready to send to your ML training engineer.</p>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label>Platform</label>
+            <select id="pkg-platform" class="select-input">
+              <option value="youtube">YouTube</option>
+              <option value="tiktok">TikTok</option>
+              <option value="netflix">Netflix</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Device</label>
+            <select id="pkg-device" class="select-input">
+              <option value="tablet" selected>Tablet (iPad)</option>
+              <option value="phone">Phone (iPhone)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Format</label>
+            <select id="pkg-format" class="select-input">
+              <option value="short_video" selected>Shorts (short_video)</option>
+              <option value="full_video">Full Video (full_video)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="pkg-result" class="pkg-result hidden">
+          <div class="alert alert-success">
+            <strong>Package Created Successfully!</strong>
+            <p id="pkg-filename">handover_youtube_tablet.zip</p>
+            <a id="pkg-download-link" class="btn btn-primary btn-block" href="#" download>
+              ⬇️ Download Handover ZIP (<span id="pkg-size">0 MB</span>)
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closePackageModal()">Cancel</button>
+        <button class="btn btn-accent" id="btn-build-package">Build Package Now</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

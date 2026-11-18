@@ -1,0 +1,627 @@
+{
+  "schema": "media_control_annotation_handover_v1",
+  "generated_at": "2026-11-17T10:55:18.608173+00:00",
+  "annotation_contract": {
+    "box_format": "xyxy_pixels",
+    "effective_annotations": "curated_annotations when present; otherwise raw_annotations",
+    "training_projection": "derived at runtime from class-map configuration"
+  },
+  "examples": [
+    {
+      "record_id": "media_web_states_v2__youtube__sports__c3d12318af24__fhd_fullscreen_playing",
+      "purpose": "Desktop full-video example with a broad resolved control set.",
+      "packaged_image": "images/media_web_states_v2__youtube__sports__c3d12318af24__fhd_fullscreen_playing.png",
+      "canonical_source": "data/platform_specialist_yolo/youtube/desktop/full_video/collected/images/media_web_states_v2__youtube__sports__c3d12318af24__fhd_fullscreen_playing.png",
+      "context": {
+        "platform": "youtube",
+        "environment": null,
+        "content_form": null,
+        "layout_family": null,
+        "device": "desktop",
+        "orientation": null,
+        "theme": null,
+        "capture_state": null,
+        "image_size": null,
+        "source": null
+      },
+      "raw_annotation_summary": {
+        "ask": 1,
+        "autoplay": 1,
+        "captions": 1,
+        "comments": 1,
+        "dislike": 1,
+        "exit_fullscreen": 1,
+        "like": 1,
+        "more_options": 1,
+        "more_videos": 1,
+        "pause": 1,
+        "playhead": 1,
+        "progress_bar": 1,
+        "settings": 1,
+        "share": 1,
+        "show_cards": 1,
+        "time_display": 1,
+        "volume_on": 1
+      },
+      "curation": {
+        "status": "resolved",
+        "notes": "Migrated visually reviewed audit_v11 geometry; non-audited raw classes preserved.",
+        "updated_at": "2026-11-04T14:39:11.558801+00:00"
+      },
+      "curated_annotations": [
+        {
+          "class": "show_cards",
+          "xyxy": [
+            1318.0,
+            8.0,
+            1354.0,
+            44.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "show cards",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "comments",
+          "xyxy": [
+            1158.0,
+            652.0,
+            1206.0,
+            684.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "comments",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "share",
+          "xyxy": [
+            1206.0,
+            652.0,
+            1254.0,
+            684.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "share",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "ask",
+          "xyxy": [
+            1254.0,
+            652.0,
+            1302.0,
+            684.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "ask",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "more_options",
+          "xyxy": [
+            1302.0,
+            652.0,
+            1350.0,
+            684.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "more actions",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "time_display",
+          "xyxy": [
+            128.0,
+            720.0,
+            203.10000610351562,
+            760.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "0 minutes 14 seconds of 23 minutes 21 seconds 0:14 / 23:21",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "autoplay",
+          "xyxy": [
+            1158.0,
+            720.0,
+            1206.0,
+            760.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "autoplay is on",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "captions",
+          "xyxy": [
+            1206.0,
+            720.0,
+            1254.0,
+            760.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "subtitles/closed captions unavailable",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "settings",
+          "xyxy": [
+            1254.0,
+            720.0,
+            1302.0,
+            760.0
+          ],
+          "source_label": "settings",
+          "descriptor": "settings",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "more_videos",
+          "xyxy": [
+            663.0,
+            720.0,
+            703.0,
+            760.0
+          ],
+          "source_label": "other_player_control",
+          "descriptor": "more videos keyboard shortcut v more videos (v)",
+          "source": "legacy_source_evidence"
+        },
+        {
+          "class": "like",
+          "xyxy": [
+            1083.0,
+            656.0,
+            1104.0,
+            679.0
+          ],
+          "source_label": "like",
+          "descriptor": "",
+          "source": "audit_v11_visual_correction"
+        },
+        {
+          "class": "dislike",
+          "xyxy": [
+            1123.0,
+            657.0,
+            1145.0,
+            680.0
+          ],
+          "source_label": "dislike",
+          "descriptor": "",
+          "source": "audit_v11_visual_correction"
+        },
+        {
+          "class": "pause",
+          "xyxy": [
+            24.0,
+            730.0,
+            40.0,
+            750.0
+          ],
+          "source_label": "pause",
+          "descriptor": "",
+          "source": "audit_v11_visual_correction"
+        },
+        {
+          "class": "volume_on",
+          "xyxy": [
+            72.0,
+            729.0,
+            96.0,
+            751.0
+          ],
+          "source_label": "volume_on",
+          "descriptor": "",
+          "source": "audit_v11_visual_correction"
+        },
+        {
+          "class": "exit_fullscreen",
+          "xyxy": [
+            1316.0,
+            726.0,
+            1347.0,
+            755.0
+          ],
+          "source_label": "exit_fullscreen",
+          "descriptor": "",
+          "source": "audit_v11_visual_correction"
+        },
+        {
+          "class": "progress_bar",
+          "xyxy": [
+            12.000002650000031,
+            698.99999616,
+            1353.9999973499998,
+            718.9999987199999
+          ],
+          "source_label": "progress_bar",
+          "descriptor": "",
+          "source": "audit_v11_visual_correction"
+        },
+        {
+          "class": "playhead",
+          "xyxy": [
+            20.156853090000002,
+            702.56333952,
+            32.20220011,
+            714.98792832
+          ],
+          "source_label": "playhead",
+          "descriptor": "",
+          "source": "audit_v11_visual_correction"
+        }
+      ]
+    },
+    {
+      "record_id": "youtube_android_000257",
+      "purpose": "Phone Shorts example with a muted toolbar state and curated seek geometry.",
+      "packaged_image": "images/youtube_android_000257.png",
+      "canonical_source": "data/platform_specialist_yolo/youtube/phone/short_video/collected/images/youtube_android_000257.png",
+      "context": {
+        "platform": "youtube",
+        "environment": "android",
+        "content_form": "shorts",
+        "layout_family": "vertical_short_player",
+        "device": "phone",
+        "orientation": "portrait",
+        "theme": "dark",
+        "capture_state": "paused_volume_muted_controls_visible",
+        "image_size": [
+          1080,
+          2400
+        ],
+        "source": "https://www.youtube.com/shorts/Tl785RyJkq0"
+      },
+      "raw_annotation_summary": {
+        "comments": 1,
+        "like": 1,
+        "more_options": 1,
+        "playhead": 1,
+        "progress_bar": 1,
+        "remix": 1,
+        "save": 1,
+        "search": 1,
+        "share": 1,
+        "sound": 1,
+        "volume_muted": 1
+      },
+      "curation": {
+        "status": "resolved",
+        "notes": "",
+        "updated_at": "2026-11-17T08:49:14.618890+00:00"
+      },
+      "curated_annotations": [
+        {
+          "class": "progress_bar",
+          "xyxy": [
+            0.0,
+            2197.5,
+            1080.0,
+            2222.5
+          ],
+          "source": "assisted_human_curation",
+          "descriptor": "Visible YouTube Shorts progress_bar",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "playhead",
+          "xyxy": [
+            601.747572815534,
+            2184.3613404565326,
+            646.6504854368932,
+            2234.8343856240895
+          ],
+          "source": "human_curation",
+          "descriptor": "Visible YouTube Shorts playhead",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "comments",
+          "xyxy": [
+            958.0,
+            1426.0,
+            1035.0,
+            1498.0
+          ],
+          "source": "screenshot_pixel_localized",
+          "descriptor": "Visible YouTube Shorts comments",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "like",
+          "xyxy": [
+            959.0,
+            1265.0,
+            1035.0,
+            1341.0
+          ],
+          "source": "screenshot_pixel_localized",
+          "descriptor": "Visible YouTube Shorts like",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "remix",
+          "xyxy": [
+            959.0,
+            1899.0,
+            1034.0,
+            1966.0
+          ],
+          "source": "screenshot_pixel_localized",
+          "descriptor": "Visible YouTube Shorts remix",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "save",
+          "xyxy": [
+            963.0,
+            1584.0,
+            1030.0,
+            1654.0
+          ],
+          "source": "screenshot_pixel_localized",
+          "descriptor": "Visible YouTube Shorts save",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "share",
+          "xyxy": [
+            958.0,
+            1743.0,
+            1035.0,
+            1810.0
+          ],
+          "source": "screenshot_pixel_localized",
+          "descriptor": "Visible YouTube Shorts share",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "sound",
+          "xyxy": [
+            944.0,
+            2064.0,
+            1048.0,
+            2168.0
+          ],
+          "source": "screenshot_pixel_localized",
+          "descriptor": "Visible YouTube Shorts sound",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "volume_muted",
+          "xyxy": [
+            721.0,
+            157.0,
+            805.0,
+            241.0
+          ],
+          "source": "accessibility_top_icon_region",
+          "descriptor": "Unmute video",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "search",
+          "xyxy": [
+            847.0,
+            157.0,
+            932.0,
+            242.0
+          ],
+          "source": "accessibility_top_icon_region",
+          "descriptor": "Search",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "more_options",
+          "xyxy": [
+            974.0,
+            157.0,
+            1059.0,
+            242.0
+          ],
+          "source": "accessibility_top_icon_region",
+          "descriptor": "More actions",
+          "resource_id": "",
+          "visible_evidence": ""
+        }
+      ]
+    },
+    {
+      "record_id": "youtube_android_000281",
+      "purpose": "Tablet Shorts example using the same curated annotation schema.",
+      "packaged_image": "images/youtube_android_000281.png",
+      "canonical_source": "data/platform_specialist_yolo/youtube/tablet/short_video/collected/images/youtube_android_000281.png",
+      "context": {
+        "platform": "youtube",
+        "environment": "android",
+        "content_form": "shorts",
+        "layout_family": "vertical_short_player",
+        "device": "tablet",
+        "orientation": "portrait",
+        "theme": "dark",
+        "capture_state": "paused_volume_muted_controls_visible",
+        "image_size": [
+          1600,
+          2560
+        ],
+        "source": "https://www.youtube.com/shorts/Tl785RyJkq0"
+      },
+      "raw_annotation_summary": {
+        "comments": 1,
+        "like": 1,
+        "more_options": 1,
+        "playhead": 1,
+        "progress_bar": 1,
+        "remix": 1,
+        "save": 1,
+        "search": 1,
+        "share": 1,
+        "sound": 1,
+        "volume_muted": 1
+      },
+      "curation": {
+        "status": "approved",
+        "notes": "Grouped portrait muted audit passed; all visible controls and circular playhead aligned.",
+        "updated_at": "2026-11-17T08:50:32.480107+00:00"
+      },
+      "curated_annotations": [
+        {
+          "class": "progress_bar",
+          "xyxy": [
+            0.0,
+            2385.6666666666665,
+            1600.0,
+            2412.3333333333335
+          ],
+          "source": "assisted_human_curation",
+          "descriptor": "Visible YouTube Shorts progress_bar",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "playhead",
+          "xyxy": [
+            628.0,
+            2373.0,
+            657.0,
+            2425.0
+          ],
+          "source": "accessibility_and_pixels",
+          "descriptor": "Visible YouTube Shorts playhead",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "like",
+          "xyxy": [
+            1494.0,
+            1674.0,
+            1578.0,
+            1754.0
+          ],
+          "source": "accessibility_icon_region",
+          "descriptor": "like this video along with 503 other people",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "comments",
+          "xyxy": [
+            1494.0,
+            1794.0,
+            1578.0,
+            1874.0
+          ],
+          "source": "accessibility_icon_region",
+          "descriptor": "View comments",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "save",
+          "xyxy": [
+            1494.0,
+            1914.0,
+            1578.0,
+            1994.0
+          ],
+          "source": "accessibility_icon_region",
+          "descriptor": "Save",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "share",
+          "xyxy": [
+            1494.0,
+            2034.0,
+            1578.0,
+            2114.0
+          ],
+          "source": "accessibility_icon_region",
+          "descriptor": "Share this video",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "remix",
+          "xyxy": [
+            1494.0,
+            2154.0,
+            1578.0,
+            2234.0
+          ],
+          "source": "accessibility_icon_region",
+          "descriptor": "Remix",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "sound",
+          "xyxy": [
+            1493.0,
+            2285.0,
+            1579.0,
+            2371.0
+          ],
+          "source": "screenshot_pixel_localized",
+          "descriptor": "Visible YouTube Shorts sound artwork",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "more_options",
+          "xyxy": [
+            1488.0,
+            64.0,
+            1552.0,
+            128.0
+          ],
+          "source": "accessibility_top_icon_region",
+          "descriptor": "More actions",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "volume_muted",
+          "xyxy": [
+            1295.0,
+            63.0,
+            1361.0,
+            129.0
+          ],
+          "source": "accessibility_top_icon_region",
+          "descriptor": "Unmute video",
+          "resource_id": "",
+          "visible_evidence": ""
+        },
+        {
+          "class": "search",
+          "xyxy": [
+            1392.0,
+            64.0,
+            1456.0,
+            128.0
+          ],
+          "source": "accessibility_top_icon_region",
+          "descriptor": "Search",
+          "resource_id": "",
+          "visible_evidence": ""
+        }
+      ]
+    }
+  ]
+}
