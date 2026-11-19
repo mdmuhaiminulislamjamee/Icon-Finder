@@ -811,26 +811,54 @@ body {
 /* Editor Body */
 .editor-body {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   flex: 1;
   overflow: hidden;
 }
 
-.canvas-container {
-  background-color: #040507;
+.canvas-pane {
   position: relative;
+  min-height: 0;
+  min-width: 0;
+  background-color: #040507;
+}
+
+.canvas-container {
+  position: absolute;
+  inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: auto;
   cursor: crosshair;
 }
 
 #annotation-canvas {
+  display: block;
+  flex: none;
+  margin: auto;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
 }
+
+.canvas-container.zoomed #annotation-canvas {
+  max-width: none;
+  max-height: none;
+}
+
+.canvas-zoom-tools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 6px;
+  background: rgba(4, 5, 7, 0.9);
+  font-size: 0.78rem;
+}
+
+.canvas-zoom-tools.hidden { display: none; }
 
 .canvas-hint {
   position: absolute;
@@ -892,6 +920,29 @@ body {
 .ann-item-cls { font-weight: 600; color: #fff; }
 .ann-item-coords { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-muted); }
 .ann-delete-btn { color: #f87171; cursor: pointer; background: none; border: none; font-size: 0.9rem; }
+
+.review-panel { background: rgba(59, 130, 246, 0.05); }
+.review-panel .btn-block { margin-top: 10px; }
+.review-panel a { display: inline-block; color: #93c5fd; }
+.review-panel [role="status"] { white-space: pre-line; }
+.suggestion-list { margin-top: 10px; max-height: 260px; }
+.suggestion-item { display: block; border: 1px dashed #7c8eaa; border-left-width: 3px; }
+.review-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.ann-item.selected { outline: 2px solid #93c5fd; }
+.ann-details { min-width: 0; overflow-wrap: anywhere; }
+.ann-source { color: #94a3b8; font-size: 0.65rem; margin-top: 3px; }
+.box-coordinate-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.box-coordinate-grid label { font-size: 0.72rem; color: #94a3b8; }
+.box-coordinate-grid input { display: block; width: 100%; min-width: 0; background: #0b1019; color: #fff; border: 1px solid #334155; padding: 6px; border-radius: 4px; }
+.modal-title-group { min-width: 0; }
+.modal-title-group h3 { overflow-wrap: anywhere; }
+.thumb-review-badge { background: #854d0e; }
+
+@media (max-width: 760px) {
+  .editor-body { grid-template-columns: minmax(0, 1fr) 280px; }
+  .modal-header { padding: 10px; gap: 10px; }
+  .modal-title-group h3 { font-size: .8rem; }
+}
 
 .sidebar-footer {
   margin-top: auto;

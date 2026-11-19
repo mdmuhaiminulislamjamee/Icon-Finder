@@ -1,0 +1,527 @@
+UPDATED MEDIACOLLECTOR iOS DEVELOPER PROMPTS
+
+This file retains the two-prompt structure of the supplied text file.
+Both versions describe the same update and use the same annotation rules.
+Send PROMPT 2 for the complete implementation specification. PROMPT 1 is the
+shorter version. The JSON examples below are valid JSON with placeholder values.
+
+Revision: the previously supplied YouTube media-control model is legacy.
+It is disabled by default in the dashboard and is NOT a dependency or required
+implementation target for this native update. Use the dashboard files listed as
+references at the end of each prompt.
+
+User-confirmed geometry rules:
+- Ordinary icon classes: include the entire visible glyph with approximately
+  18% padding per side. Keep strokes and antialiasing clear of the box edges
+  and exclude adjacent words, counts, timestamps, and controls.
+- Subscribe: include the entire visible button, with the label and background.
+- Skip Ad: preserve the previous skip_ad behavior. Include the visible Skip Ad
+  text AND the adjacent skip icon together in the annotation. Do not reduce it
+  to an icon-only box or text-only box. Do not infer it from a generic Ad badge,
+  a countdown, an expected location, or CAPTURE_STATE.
+- Progress bar: keep the full visible width and center the box on the track.
+  Use about 1.35% of original screenshot height as the minimum box height.
+- Playhead: include a separate box only when the thumb is visible. Place its
+  center inside the progress-bar box. Check all boxes at high zoom.
+
+==========================================================================
+PROMPT 1 - CONCISE DEVELOPER REQUEST
+==========================================================================
+
+Send your friend this prompt. It covers the MediaCollector app, capture runner,
+and USB kit.
+
+Please update the original MediaCollector.xcodeproj used to build
+MediaCollector-USB-kit-skip-ad.
+
+My Windows dashboard supports annotation review, duplicate removal, visual
+suggestions, incremental imports, and reviewable visible-geometry replacements.
+I need the native iOS capture and import pipeline updated to supply reliable
+capture data and match the annotation quality of the Android reference examples.
+
+Observed problems:
+- One iPad capture had six annotations but only three unique classes: search,
+  save, and remix. Each box appeared twice.
+- Other visible controls, including like, comments, and share, were missing.
+- Accessibility regions could include both an icon and its adjacent label/count.
+- The complete accessibility snapshot was not exported with the screenshot.
+- Importing could bring previously processed captures back.
+
+The desired result is Android-quality reviewed annotations on real iPads.
+Please inspect the Android collector's actual source, raw annotations, geometry
+rules, and curated overrides before assuming its screenshots demonstrate fully
+automatic accuracy. Reuse its class names and visual-box conventions, adapting
+the implementation to iOS rather than copying Android screen coordinates.
+
+Please implement the following:
+
+1. Record the complete available accessibility snapshot.
+
+Capture the screenshot and available accessibility tree as close together as
+possible while the target app is foregrounded, before activating the companion.
+Keep unmatched and non-hittable elements, identifiers, labels, values, element
+types, frames, enabled/hittable states, debug tree, timing, image dimensions,
+coordinate space, full screen rectangle, stable record_id, and SHA256 of the
+exact PNG bytes exported. Flag timing uncertainty and scene changes honestly.
+
+Use this compatible sidecar example; replace every placeholder/example value:
+
+{
+  "schema": "media_collector_accessibility_v1",
+  "record_id": "youtube_ios_example_stable_capture_id",
+  "image_sha256": "REPLACE_WITH_64_CHARACTER_SHA256_OF_EXPORTED_PNG",
+  "image_size": [1668, 2388],
+  "coordinate_space": "screen_points",
+  "screen_frame": [0, 0, 834, 1194],
+  "snapshot_started_at": "2026-11-19T06:00:00Z",
+  "snapshot_finished_at": "2026-11-19T06:00:01Z",
+  "source": "ios_xctest_accessibility_full_snapshot",
+  "geometry_policy_version": "media_control_visual_geometry_v3",
+  "elements": [
+    {
+      "element_index": 0,
+      "identifier": "ACTUAL_IDENTIFIER",
+      "label": "Save",
+      "value": "",
+      "element_type": 0,
+      "frame": [770, 866, 64, 60],
+      "visible": true,
+      "is_hittable": true,
+      "enabled": true
+    }
+  ],
+  "debug_tree": "COMPLETE_AVAILABLE_XCTEST_TREE"
+}
+
+For compatibility, visible retains the conservative isHittable proxy. Preserve
+non-hittable elements with visible=false and is_hittable=false. Hittability is
+not proof of visual presence or a reason to erase an element from diagnostics.
+
+2. Improve matching, visible geometry, and duplicate handling.
+
+Use verified identifiers first and normalized action labels second. Handle
+counts, case, punctuation, selected states, and supported localizations. Keep
+the original labels as metadata: using accessibility text to identify a button
+is acceptable, but its text/interaction frame is not automatically its icon box.
+
+Do not confuse dislike with like. Interpret Mute/Unmute action semantics and
+actual state correctly. Use annotation_quality.py for the source class names.
+Support the reference vocabulary, including cast, minimize_player, hide_controls,
+subscribe, download, and report_problem where actually visible. Keep any
+reference aliases explicit and consistent with downstream training class maps.
+
+For ordinary icon classes, localize the complete visible glyph from screenshot
+pixels or verified child/image geometry. Pad each side by approximately 18% of
+the corresponding glyph dimension, reducing the padding near adjacent labels
+or controls. Preserve all parts of a multipart icon, including the triangle and
+stop bar for Previous/Next. Check the strokes and antialiasing at high zoom.
+
+Localize the full Subscribe button, including its text and background. Skip Ad
+includes its text and adjacent skip icon together when the button is available.
+Keep the full visible width of the progress track and center a box with minimum
+height about 1.35% of the original screenshot height on it. Use a separate box
+for the visible playhead, with its center inside that track box.
+
+Use separate original-image pixel fields:
+- interaction_xyxy: full original touch/accessibility region.
+- visible_content_xyxy: actual observed glyph, button, track, or marker bounds.
+- visual_xyxy and xyxy: final annotation box used for review and export.
+- geometry_policy and geometry_source: how that target was defined/localized.
+
+Convert screen-point frames correctly. visual_xyxy, when supplied in the
+accessibility sidecar, is ALWAYS in original screenshot pixels, even when
+frame is in screen points. Do not scale visual_xyxy twice.
+
+Deduplicate repeated observations of the same control using identity and
+equivalent class/geometry, while retaining separate controls of the same class.
+Recalculate raw_annotation_summary from the final raw annotation list. Preserve
+the full available tree and unmatched elements in the snapshot.
+
+Do not fabricate boxes from requested classes or CAPTURE_STATE. Do not estimate
+an invisible playhead from a timestamp/progress ratio. A complete accessibility
+snapshot does not guarantee every visible control is exposed. When a glyph is
+absent or ambiguous, report it for visual/manual review instead of substituting
+a text label, a fixed inset, or an invented box.
+
+3. Transfer complete captures to the companion.
+
+Extend the existing runner-to-companion loopback bridge to transfer screenshot,
+raw record, full accessibility sidecar, and any verified visual geometry.
+The two apps have separate sandboxes. Saving inside the runner alone is not
+sufficient. Commit the image and sidecar before publishing annotations.jsonl.
+Keep the exact image bytes and matching hash throughout retries/export.
+
+4. Preserve the source/curation storage contract.
+
+Store captures under:
+Documents/data/platform_specialist_yolo/{platform}/{device}/{content_format}/collected/
+    images/{record_id}.png
+    accessibility/{record_id}.json
+    annotations.jsonl
+    curation/annotation_overrides.json
+    curation/annotation_audit.jsonl
+
+Raw source records remain source evidence. Curated corrections replace them
+through curated_annotations, including an intentionally empty list. Unaccepted
+visual predictions remain proposals and must not silently become ground truth.
+Preserve existing human curation during imports and app updates.
+
+5. Make import and deletion idempotent.
+
+Generate a capture ID once and reuse it through retries/imports. Persist imported
+IDs across restarts. Re-importing unchanged pending captures must add zero; one
+new capture must add exactly one. Acknowledge durable commits before retiring
+pending payloads. Keep failures retryable. Provide capture deletion/clear controls
+and bridge-based runner staging cleanup, retaining tombstones so deleted captures
+cannot return from old pending payloads. Show imported/skipped/pending/failed counts.
+
+6. Preserve Windows USB compatibility.
+
+Keep existing bundle IDs, file sharing, pymobiledevice3 launch commands, capture
+delay, and PLATFORM_NAME_INPUT, CONTENT_FORMAT, CAPTURE_STATE, TARGET_BUNDLE, and
+optional metadata variables. The dashboard currently uses a 25-second runner
+timeout; document if the complete snapshot needs a configurable longer timeout.
+
+7. Demonstrate quality on real devices.
+
+Compare against independently reviewed iPad annotations across portrait,
+landscape, Shorts, full video, light/dark UI, translucent/disabled icons,
+hidden controls, and ads with an available Skip Ad control. Report per-class
+precision, recall, duplicates, missed controls, and box IoU at 0.50 and 0.75.
+Include negative cases containing Save/Share words or counts without icons.
+Keep evaluation images separate from training/template examples.
+
+Do not claim Android-equivalent automatic performance solely from attractive
+overlays, three sample images, or successful USB/API tests. If a trained visual
+detector is needed, collect reviewed iOS examples for the missing classes and
+validate that model separately on representative iOS data. The old YouTube
+media-control model is legacy and must not be a required dependency or a source
+of accuracy claims for this work. The current workflow uses accessibility,
+verified pixel geometry, reviewed examples and human review independently of it.
+
+8. Deliver the updated kit.
+
+Provide updated source, rebuilt companion and runner, signing/install directions,
+updated USB kit and Capture.cmd/README, representative screenshots with raw
+records and matching sidecars, annotation overlays, benchmark results, and
+remaining limitations. The supplied Swift helper is uncompiled reference code
+and must be reviewed, adapted, built, and tested in the original project.
+
+==========================================================================
+PROMPT 2 - COMPLETE IMPLEMENTATION SPECIFICATION (RECOMMENDED TO SEND)
+==========================================================================
+
+Send your friend this prompt. It covers the capture runner, companion app, and
+compatibility with the updated dashboard.
+
+Please update the original MediaCollector Xcode project used to build
+MediaCollector-USB-kit-skip-ad, including both the MediaCollector companion
+app and Capture XCTest runner.
+
+The Windows dashboard supports annotation review, duplicate removal, visual
+suggestions, incremental imports, and reviewable icon/text geometry replacements.
+The remaining native changes must provide complete capture evidence and visible
+target boxes that match the Android reference annotation standard.
+
+Current problems:
+- The earlier iPad capture had search, save, and remix twice each.
+- Other visible controls such as like, comments, and share were absent.
+- Some boxes covered the whole accessibility/touch region, including the icon's
+  adjacent label or count, instead of its visible glyph.
+- Full accessibility data was not preserved, preventing diagnosis of omissions.
+- Previously processed or deleted captures could reappear during import.
+
+The goal is parity with the quality of the Android reference annotations on real
+iPads. First inspect the colleague's Android collector source, class definitions,
+raw outputs, pixel-localization rules, and human overrides. Determine which parts
+were automatic versus reviewed. Android accessibility bounds and device layouts
+are not interchangeable with iOS bounds or coordinates.
+
+Please implement the following:
+
+1. Save the complete available accessibility snapshot for every capture.
+
+Capture the original screenshot and available accessibility hierarchy while the
+TARGET app is foregrounded. Do this before activating the companion. Keep the
+capture and enumeration close in time and record their timestamps honestly.
+
+Preserve every available element, including unmatched and non-hittable elements:
+- Stable record_id tied to the exact screenshot and source record.
+- Original identifier, label, value, element type, frame, and element index.
+- Enabled and hittable states, with the available semantic/state metadata.
+- Complete available XCTest debug tree.
+- Snapshot start/end times and capture timing/scene-change uncertainty.
+- Actual image size, coordinate space, and full screenshot screen rectangle.
+- SHA256 of the exact PNG bytes that are ultimately stored/exported.
+
+Use efficient supported snapshot/enumeration APIs and document any limitations.
+Do not claim atomic capture of an animated interface or promise that XCTest
+exposes every visible glyph. Retain unexposed/unmatched/uncertain cases for review.
+
+The supplied CaptureAccessibilitySnapshot.swift is a starting point for recording
+metadata. It is not a compiled update and does not itself implement all visible
+glyph localization or bridge/import changes requested below.
+
+2. Use the sidecar and visible-geometry contract expected by Windows.
+
+Store the completed capture in the COMPANION app under:
+
+Documents/data/platform_specialist_yolo/{platform}/{device}/{content_format}/collected/
+    images/{record_id}.png
+    accessibility/{record_id}.json
+    annotations.jsonl
+    curation/annotation_overrides.json
+    curation/annotation_audit.jsonl
+
+Keep the sidecar schema media_collector_accessibility_v1. Optional visual fields
+extend it compatibly; do not change the meaning/units of existing frame fields.
+This example includes a verified visual box to demonstrate the units. Replace
+all example data, and omit visual_xyxy if it has not actually been localized.
+
+{
+  "schema": "media_collector_accessibility_v1",
+  "record_id": "youtube_ios_example_stable_capture_id",
+  "image_sha256": "REPLACE_WITH_64_CHARACTER_SHA256_OF_EXPORTED_PNG",
+  "image_size": [1668, 2388],
+  "coordinate_space": "screen_points",
+  "screen_frame": [0, 0, 834, 1194],
+  "snapshot_started_at": "2026-11-19T06:00:00Z",
+  "snapshot_finished_at": "2026-11-19T06:00:01Z",
+  "source": "ios_xctest_accessibility_full_snapshot",
+  "geometry_policy_version": "media_control_visual_geometry_v3",
+  "elements": [
+    {
+      "element_index": 0,
+      "identifier": "ACTUAL_IDENTIFIER",
+      "label": "Save",
+      "value": "",
+      "element_type": 0,
+      "frame": [770, 866, 64, 60],
+      "visible": true,
+      "is_hittable": true,
+      "enabled": true,
+      "visible_content_xyxy": [1585, 1753, 1623, 1795],
+      "visual_xyxy": [1578, 1745, 1630, 1803],
+      "geometry_source": "native_pixel_localization"
+    }
+  ],
+  "debug_tree": "COMPLETE_AVAILABLE_XCTEST_TREE"
+}
+
+visible retains the existing isHittable proxy for compatibility. Also preserve
+is_hittable explicitly. false elements stay in diagnostics. Neither true nor
+false is a complete test of visual presence, so actual pixels still need review.
+
+frame is [x, y, width, height] in the declared accessibility coordinate space.
+visual_xyxy is ALWAYS [left, top, right, bottom] in ORIGINAL IMAGE PIXELS, even
+when frame uses screen points. Do not apply the point-to-pixel scale twice.
+
+For source annotations, preserve these distinct meanings:
+- interaction_xyxy: full original touch/accessibility region in image pixels.
+- visible_content_xyxy: measured visible target in original image pixels.
+- visual_xyxy: final annotation bounds after applying the geometry rules.
+- xyxy: the visual box used for annotation/export once visual geometry exists.
+- geometry_policy: the class-specific rule below.
+- geometry_source: native pixel/child-image localization, visual model, reviewed
+  template, or human annotation, recorded truthfully.
+- geometry_reviewed: true only after a human actually reviews the geometry.
+- review_required: true for unaccepted predictions/uncertain geometry.
+
+Do not populate visual_xyxy by copying the interaction frame or applying a
+fixed percentage inset. If visual localization fails, retain the raw frame and
+report the failure rather than pretending the whole hit region is an icon box.
+
+3. Transfer the complete capture through the existing bridge.
+
+Extend runner-to-companion loopback transfer, staging, retries, acknowledgement,
+and companion import to carry the image, source record, full sidecar, and verified
+visual geometry. The runner and companion have separate sandboxes; writing only
+to the runner does not place a file in the companion's Documents folder.
+
+Commit the screenshot and snapshot before publishing the matching JSONL record.
+Retain exact image bytes and the same hash throughout transfer and export. Use
+stable IDs and a durable commit/acknowledgement so a crash/retry cannot produce
+duplicates or an apparently complete record whose required assets are missing.
+
+4. Improve matching and implement the required visible target geometry.
+
+Use verified identifiers first, then carefully normalized action labels. Handle
+counts, case, punctuation, selected states, and supported localizations. Avoid
+dislike/like substring collisions. Interpret Mute/Unmute actions and current
+state correctly. Log matched and unmatched decisions with their evidence.
+
+Accessibility LABELS are useful semantic metadata. Keep them. The problem to
+fix is including adjacent visible words/counts or invisible padding in ICON
+annotation boxes, not preserving an accessibility label in the JSON metadata.
+
+Use the class names from annotation_quality.py, including reference classes that
+were previously missing from the picker: minimize_player, cast, hide_controls,
+subscribe, channel, download, and report_problem. Document any Android aliases
+and training projection rather than silently inventing/remapping model indices.
+
+Apply these policies consistently:
+
+A. icon_only
+For like, dislike, comments, share, save, remix, search, more_options, play, pause,
+volume states, fullscreen states, transport/seek controls, settings, captions,
+cast, minimize_player, hide_controls, download, report_problem, and other icon
+targets, include the entire glyph and approximately 18% padding per side. Keep
+strokes and antialiasing clear of the box boundary. Reduce padding where needed
+to exclude adjacent Save/Share/Remix labels, counts, tooltips and other controls.
+Check all bounds at high zoom, especially Play and both parts of Previous/Next.
+
+Keep all constituent parts of a glyph: both pause bars, all ellipsis dots,
+speaker waves/mute slash, both Remix arrows and center plus, fullscreen corners,
+and digits embedded in a circular seek icon. Embedded icon artwork is not an
+adjacent text label to be removed.
+
+B. visible_button - Subscribe
+Localize the full visible Subscribe/Subscribed button, including the text and
+button background. Keep the touch rectangle in interaction_xyxy and exclude the
+neighboring channel name and other controls from the visible annotation.
+
+C. text_and_icon - Skip Ad (KEEP PREVIOUS BEHAVIOR)
+Preserve the existing skip_ad semantics. Annotate the actual available Skip Ad
+control with BOTH its text and the adjacent skip icon in one visible box.
+Do not turn it into an icon-only box, a text-only box, a generic ad badge, or an
+inferred countdown target. Do not fabricate an adjacent icon when it is absent;
+flag a genuine differing layout for review and document its evidence/policy.
+
+D. Other deliberate target types
+progress_bar: full visible track width, with the box centered vertically on
+the measured stripe and a minimum height about 1.35% of the original image
+height. Exclude timestamps.
+playhead: separate box around the visible thumb with its center inside the
+progress-bar box. Place the box using the visible thumb's pixels.
+sound/channel: the actual relevant artwork/thumbnail, excluding adjacent titles.
+autoplay: the visible toggle/control, not its explanatory text.
+time_display: an explicitly requested text readout, not an icon annotation.
+more_videos: the documented composite control consistent with the reference.
+
+Map these to geometry policies visible_track, visible_marker, artwork,
+visible_toggle, text_readout, and composite_control respectively. Additional
+classes need an explicit policy and examples, not a blanket icon-cropping rule.
+
+Use verified child/image bounds or screenshot-based localization to obtain the
+visible target. A conservative contour/template stage can assist known controls;
+ambiguous or unexposed controls require a suitable visual detector or review.
+Do not classify a random word as an icon just because its text matches a class.
+
+The previously supplied YouTube media-control model is backdated/legacy. Do not
+make it a dependency, required implementation target, benchmark authority, or
+source of truth for this native update. Its old class indices and fixed input
+size are not requirements for a future replacement. The current Windows
+workflow disables it by default and can use accessibility, pixel geometry,
+reviewed examples and human review without loading its code or model files.
+
+If full automatic coverage requires a trained visual detector, collect reviewed
+current iOS examples of the needed classes and relevant icon styles, then
+select/train and validate that detector against the current annotation contract.
+Use the chosen detector's documented input/output contract and versioned class
+map; do not inherit an old model's tensor dimensions or restricted class set.
+No replacement neural model has been supplied or validated in this handoff.
+Retain full screenshots and raw evidence; keep unaccepted predictions separate
+from human-approved source corrections. Independently captured images must not
+be smoothed together as if they were consecutive video frames.
+
+5. Remove duplicate generated annotations and preserve curation.
+
+Diagnose the repeated search/save/remix entries rather than hiding the cause.
+Merge repeated observations of the SAME control using identity plus class and
+equivalent geometry. Keep genuinely separate controls in different locations.
+Deduplicate before calculating raw_annotation_summary. Preserve the complete
+available raw tree, including unmatched elements, for diagnosis.
+
+Keep annotations.jsonl as original source evidence. Effective annotations are
+curated_annotations when present in annotation_overrides.json, including an
+empty list; otherwise they come from raw_annotations. Save visual corrections
+and exact audit history without overwriting existing human curation on import.
+Do not silently label unreviewed AI/pixel proposals as approved ground truth.
+
+6. Make companion imports and deletions idempotent.
+
+Generate a record_id once per capture and reuse it across every bridge retry,
+companion import, export, and Windows sync. Persist processed IDs across restarts.
+Repeated Import captures with unchanged input must import zero extra records.
+After exactly one new capture, import exactly one new record.
+
+Acknowledge complete durable imports before retiring pending payloads. Failed
+or interrupted transfers stay retryable and keep their original capture IDs.
+Provide clear imported/skipped/pending/failed counts and useful failure reasons.
+
+Provide capture deletion/clear controls that also handle pending inbound data.
+Retain deletion tombstones so an old pending payload cannot restore a deleted
+capture. Coordinate runner-owned staging cleanup through the bridge; do not
+assume the companion can directly delete the runner's separate sandbox files.
+Normal capture clearing must not reset deduplication/deletion history.
+
+7. Preserve Windows USB compatibility.
+
+Keep these bundle IDs unless a breaking change is essential and documented:
+- Companion: com.grozziie.media-collector
+- Runner: com.grozziie.media-collector.capture.xctrunner
+- XCTest bundle: com.grozziie.media-collector.capture
+
+Preserve the existing pymobiledevice3 launch flow, USB file sharing, and the
+environment variables PLATFORM_NAME_INPUT, CONTENT_FORMAT, CAPTURE_STATE,
+TARGET_BUNDLE, plus existing optional metadata variables.
+
+Keep the usual capture delay. Efficient full snapshot enumeration should not
+silently truncate the tree to satisfy a timeout. The current dashboard runner
+timeout is 25 seconds: report actual timing and document/configure an increased
+timeout on both sides if it is genuinely required.
+
+8. Test quality and deliver the complete updated kit.
+
+Test real iPad Shorts and full videos, portrait and landscape, controls visible
+and hidden, light and dark themes, translucent/disabled icons, selected states,
+mute/unmute, and ads with a real available Skip Ad control. Use iPhones too if
+they remain a supported target. Include repeated imports, app restarts, failed
+transfers, retries, deletion, and preservation of existing curated overrides.
+
+Build a manually reviewed evaluation set separate from training/templates.
+Compare native automatic outputs, PC-assisted proposals, and final human-reviewed
+annotations separately. Report per-class precision/recall, false positives,
+misses, duplicate rate, and localization IoU at both 0.50 and 0.75. Include
+failure overlays and cases where labels/counts are visible without their icons.
+
+Acceptance for the reference scenarios:
+- All actually visible required targets are accounted for through verified
+  automatic annotations or clearly identified remaining review cases.
+- Icon boxes contain the complete padded glyph and exclude adjacent text and
+  counts. Subscribe includes its background. Skip Ad includes text and icon.
+- Check all boxes at high zoom, including the relative height and center of
+  each track box and the position of any visible playhead.
+- No fabricated hidden controls, guessed playheads, or duplicate boxes.
+- Correct original-pixel alignment in both orientations and all tested scales.
+- Complete available snapshot and matching SHA256 survive end-to-end transfer.
+- No new captures means zero imported records; one new capture means one.
+- Retry/deletion behavior does not recreate old data or erase human curation.
+
+Do not claim Android-equivalent automatic accuracy from the three annotated
+reference images alone, or confuse passing transport/API tests with detector
+precision/recall. Report measured results and remaining class/layout gaps. The
+target is the same final annotation quality; quantify any automatic performance
+gap and the data/model work needed to close it.
+
+Please provide:
+- Updated original Xcode source project.
+- Rebuilt companion and runner, with signing/provisioning/install instructions.
+- Updated MediaCollector-USB-kit-skip-ad, Capture.cmd, and README as needed.
+- Example original screenshots, source records, full sidecars, visible geometry,
+  and overlays from actual supported iOS devices.
+- Class/geometry policy documentation, benchmark results, and failure cases.
+- Any separately trained visual model, its class map, data provenance, and
+  reproducible inference/evaluation instructions if one is needed.
+- Remaining accessibility, localization, timing, and platform limitations.
+
+Reference files to include with this request:
+- tools/ios/CaptureAccessibilitySnapshot.swift
+- tools/annotation_geometry.py
+- tools/annotation_quality.py
+- tools/dashboard/README.md
+- annotation_format_handover(1)/README.md and CURATED_EXAMPLES.json
+- The Android reference screenshots and, if available, the Android collector code.
+
+The Swift helper is an uncompiled starting point. Please review, adapt, compile,
+sign, install, and test the native changes in the original project on a Mac.

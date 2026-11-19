@@ -24,3 +24,8 @@ OmniParser/
 
 # Redundant duplicate zip archives
 *.zip
+
+# Import history survives clearing the capture folders.
+data/.capture_import_history.json
+data/.capture_import.lock
+.capture-backups/

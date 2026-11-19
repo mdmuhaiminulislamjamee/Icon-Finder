@@ -1,0 +1,3 @@
+# Optional historical-model comparisons only. Not needed for the current dashboard.
+-r requirements.txt
+onnxruntime==1.32.0

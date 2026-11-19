@@ -3,6 +3,13 @@
 let allRecords = [];
 let activeRecord = null;
 let currentAnnotations = [];
+let currentProposals = [];
+let proposalDecisions = [];
+let selectedAnnotation = null;
+let editorDirty = false;
+let suggestionRequest = 0;
+let annotationClasses = [];
+let geometryPolicies = {subscribe: "visible_button", skip_ad: "text_and_icon", progress_bar: "visible_track", playhead: "visible_marker", sound: "artwork", channel: "artwork", autoplay: "visible_toggle", time_display: "text_readout", more_videos: "composite_control"};
 
 // Streaming state
 let isStreaming = false;
@@ -34,11 +41,17 @@ const CLASS_COLORS = {
   save: "#d946ef",
   search: "#64748b",
   more_options: "#94a3b8",
+  previous: "#14b8a6", next: "#2dd4bf", seek_backward: "#a3e635", seek_forward: "#84cc16",
+  settings: "#94a3b8", captions: "#c084fc", autoplay: "#38bdf8", time_display: "#cbd5e1",
+  more_videos: "#a78bfa", show_cards: "#818cf8", ask: "#f472b6",
+  minimize_player: "#a78bfa", cast: "#38bdf8", hide_controls: "#facc15",
+  subscribe: "#f472b6", channel: "#38bdf8", download: "#818cf8", report_problem: "#fb7185",
 };
 
 // Canvas drawing state
 let canvas, ctx;
 let canvasImage = null;
+let inspectedBox = null;
 let isDrawing = false;
 let drawStartX = 0;
 let drawStartY = 0;
@@ -48,7 +61,99 @@ document.addEventListener("DOMContentLoaded", () => {
   loadRecords();
   setupEventListeners();
   initCanvas();
+  loadAnnotationClasses();
 });
+
+async function loadAnnotationClasses() {
+  annotationClasses = Object.keys(CLASS_COLORS);
+  try {
+    const response = await fetch("/api/annotation-classes");
+    if (response.ok) {
+      const result = await response.json();
+      annotationClasses = result.classes;
+      geometryPolicies = result.geometry_policies || geometryPolicies;
+    }
+  } catch (error) {
+    console.warn("Using built-in annotation classes", error);
+  }
+  const drawSelect = document.getElementById("draw-class-select");
+  drawSelect.replaceChildren(...annotationClasses.map((cls) => new Option(cls, cls)));
+  const filter = document.getElementById("filter-class");
+  filter.replaceChildren(new Option("All Classes", "all"), ...annotationClasses.map((cls) => new Option(cls, cls)));
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
+}
+
+function recordAnnotations(record) {
+  return record.display_annotations || record.effective_annotations;
+}
+
+function visualPolicy(cls) {
+  return geometryPolicies[cls] || "icon_only";
+}
+
+function matchingBox(a, b) {
+  return a.class === b.class && a.xyxy.every((value, index) => Math.abs(value-b.xyxy[index]) <= .01);
+}
+
+function sameControl(a, b) {
+  if (a.class !== b.class) return false;
+  if (boxIoU(a.xyxy, b.xyxy) >= .5) return true;
+  const x = a.xyxy, y = b.xyxy;
+  const intersection = Math.max(0, Math.min(x[2], y[2])-Math.max(x[0], y[0])) * Math.max(0, Math.min(x[3], y[3])-Math.max(x[1], y[1]));
+  const smaller = Math.min((x[2]-x[0])*(x[3]-x[1]), (y[2]-y[0])*(y[3]-y[1]));
+  const tolerance = Math.max(2, .15*Math.min(Math.max(x[2]-x[0], x[3]-x[1]), Math.max(y[2]-y[0], y[3]-y[1])));
+  return intersection >= .85*smaller && Math.abs(x[0]+x[2]-y[0]-y[2])/2 <= tolerance && Math.abs(x[1]+x[3]-y[1]-y[3])/2 <= tolerance;
+}
+
+function loadEditorAnnotations(record) {
+  const effective = JSON.parse(JSON.stringify(recordAnnotations(record)));
+  currentAnnotations = effective.filter((ann) => !ann.review_required);
+  proposalDecisions = JSON.parse(JSON.stringify(record.proposal_review || []));
+  currentProposals = proposalDecisions.filter((item) => item.decision === "pending" && typeof item.class === "string" && Array.isArray(item.xyxy) && item.xyxy.length === 4);
+  for (const annotation of effective.filter((ann) => ann.review_required)) {
+    const candidate = {...annotation, proposal_kind: "native_capture",
+      proposal_id: annotation.proposal_id || `native:${record.record_id}:${annotation.class}:${annotation.xyxy.map((value) => Number(value).toFixed(3)).join(",")}`};
+    const prior = [...proposalDecisions].reverse().find((item) => item.proposal_id === candidate.proposal_id || (Array.isArray(item.xyxy) && matchingBox(item, candidate)));
+    if (prior?.decision === "accepted") {
+      currentAnnotations.push({...annotation, review_required: false, geometry_reviewed: true, reviewed_by: "human"});
+    } else if (!prior || prior.decision === "pending") {
+      if (!prior) proposalDecisions.push({...candidate, decision: "pending"});
+      const existing = currentProposals.find((item) => matchingBox(item, candidate));
+      if (existing) existing.proposal_kind = "native_capture";
+      else currentProposals.push(candidate);
+    }
+  }
+}
+
+function reviewedGeometry(annotation, box, cls) {
+  if (cls === "progress_bar" && canvas?.height) {
+    const center = (box[1]+box[3])/2;
+    const halfHeight = Math.max((box[3]-box[1])/2, Math.round(canvas.height*0.0135)/2);
+    const boundedHeight = Math.min(halfHeight, center, canvas.height-center);
+    box = [box[0], center-boundedHeight, box[2], center+boundedHeight];
+  }
+  const result = {...annotation, class: cls, xyxy: box, visual_xyxy: box, source: "studio_manual_curation",
+    geometry_policy: visualPolicy(cls), geometry_source: "human_drawn", geometry_reviewed: true, review_required: false};
+  if (!result.interaction_xyxy && annotation.xyxy && ["ios_xctest_accessibility", "studio_accessibility_matcher", "xctest", "uiautomator", "android_accessibility"].includes(annotation.source)) result.interaction_xyxy = annotation.xyxy;
+  delete result.canonical_xyxy;
+  delete result.visible_content_xyxy;
+  delete result.geometry_policy_version;
+  return result;
+}
+
+function boxIoU(a, b) {
+  const intersection = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  const area = (a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - intersection;
+  return intersection / Math.max(area, 1e-9);
+}
+
+function markEditorChanged() {
+  editorDirty = true;
+  document.getElementById("curation-status-select").value = "needs_review";
+}
 
 // -------------------------------------------------------------
 // 1. Device Polling & Status
@@ -264,7 +369,7 @@ async function triggerSingleCapture() {
       logPre.textContent = data.log || "No log returned";
       setTimeout(loadRecords, 800);
     } else {
-      statusTitle.textContent = "❌ " + data.message;
+      statusTitle.textContent = "❌ " + (data.message || data.detail || "Capture failed");
       logPre.textContent = data.log || data.message;
       logPre.classList.remove("hidden");
     }
@@ -325,9 +430,15 @@ async function runAutoCaptureIteration() {
       autoSessionCount++;
       updateAutoBadge();
       loadRecords();
+    } else {
+      stopAutoCapture();
+      document.getElementById("capture-status-title").textContent = data.message || data.detail || "Capture needs attention; loop stopped.";
+      document.getElementById("capture-log").textContent = data.log || data.message || data.detail;
+      document.getElementById("capture-log").classList.remove("hidden");
     }
   } catch (err) {
-    console.error("Auto-capture iteration failed:", err);
+    stopAutoCapture();
+    document.getElementById("capture-status-title").textContent = "Capture request failed; loop stopped: " + err.message;
   }
 
   if (isAutoCapturing) {
@@ -342,7 +453,7 @@ function updateAutoBadge() {
 function toggleLog() {
   const log = document.getElementById("capture-log");
   if (!log.textContent.trim()) {
-    log.textContent = "No capture log recorded in this session yet.\nClick 'Trigger Single Capture (4s)' or 'Start Auto-Capture' above to run the capture runner on the iPad.";
+    log.textContent = "No capture log recorded in this session yet.\nClick 'Capture One Frame' or 'Start Auto-Capture' above to run the capture runner on the iPad.";
   }
   log.classList.toggle("hidden");
 }
@@ -356,15 +467,19 @@ async function syncFromDevice() {
   try {
     const res = await fetch("/api/device/sync", { method: "POST" });
     const data = await res.json();
-    if (data.success) {
-      btn.innerHTML = `<span class="icon">✅</span> Synced (${data.synced_images} new)`;
+    if (res.ok && data.success) {
+      const imported = data.synced_records ?? data.synced_images ?? 0;
+      btn.innerHTML = imported
+        ? `<span class="icon">✅</span> Imported ${imported} new`
+        : `<span class="icon">✅</span> No new captures`;
       setTimeout(() => {
         btn.innerHTML = origText;
         btn.disabled = false;
       }, 2000);
       loadRecords();
     } else {
-      alert("Sync failed: " + (data.detail || "Unknown error"));
+      alert(data.message || data.detail || "Capture import failed.");
+      if (data.synced_records) loadRecords();
       btn.innerHTML = origText;
       btn.disabled = false;
     }
@@ -406,10 +521,12 @@ function renderGallery() {
     if (filterOrientation !== "all" && r.orientation !== filterOrientation) return false;
     if (filterStatus === "curated" && !r.is_curated) return false;
     if (filterStatus === "raw" && r.is_curated) return false;
+    if (filterStatus === "needs_review" && !["raw", "needs_review"].includes(r.curation_status)) return false;
+    if (filterStatus === "approved" && !["approved", "resolved"].includes(r.curation_status)) return false;
     if (filterSearch && !r.record_id.toLowerCase().includes(filterSearch)) return false;
 
     if (filterClass !== "all") {
-      const hasClass = r.effective_annotations.some((a) => a.class === filterClass);
+      const hasClass = recordAnnotations(r).some((a) => a.class === filterClass);
       if (!hasClass) return false;
     }
     return true;
@@ -426,12 +543,13 @@ function renderGallery() {
 
   grid.innerHTML = filtered
     .map((r) => {
-      const statusBadge = r.is_curated
-        ? `<span class="thumb-curated-badge">✓ Curated</span>`
-        : `<span class="thumb-raw-badge">Raw</span>`;
+      const ready = ["approved", "resolved"].includes(r.curation_status);
+      const statusBadge = ready
+        ? `<span class="thumb-curated-badge">Reviewed</span>`
+        : `<span class="thumb-raw-badge thumb-review-badge">${r.is_curated ? "Needs Review" : "Raw / Review"}</span>`;
 
-      const boxCount = r.effective_annotations.length;
-      const hasSkipAd = r.effective_annotations.some((a) => a.class === "skip_ad");
+      const boxCount = recordAnnotations(r).length;
+      const hasSkipAd = recordAnnotations(r).some((a) => a.class === "skip_ad");
       const orientationLabel = r.orientation === "landscape" ? "Landscape 🔄" : "Portrait 📱";
 
       return `
@@ -475,75 +593,149 @@ function initCanvas() {
   canvas.addEventListener("mousedown", onMouseDown);
   canvas.addEventListener("mousemove", onMouseMove);
   canvas.addEventListener("mouseup", onMouseUp);
+  window.addEventListener("mouseup", onMouseUp);
 }
 
 function openEditor(recordId) {
+  if (activeRecord && editorDirty && !confirm("Discard unsaved annotation changes?")) return;
   const rec = allRecords.find((r) => r.record_id === recordId);
   if (!rec) return;
 
   activeRecord = rec;
-  currentAnnotations = JSON.parse(JSON.stringify(rec.effective_annotations));
+  loadEditorAnnotations(rec);
+  editorDirty = false;
+  suggestionRequest++;
+  fitEditorImage();
+  editAnnotation(null);
+  renderSuggestions();
+  document.getElementById("suggestion-message").textContent = currentProposals.length ? `${currentProposals.length} candidate(s) need review. Accept correct boxes, reject incorrect ones, and draw missing targets.` : "";
+  const suggestButton = document.getElementById("btn-suggest-annotations");
+  suggestButton.disabled = false;
+  suggestButton.textContent = "Suggest Missing Labels";
+  document.getElementById("btn-refine-geometry").disabled = false;
+  document.getElementById("show-interaction-boxes").checked = false;
+  const quality = rec.annotation_quality || {};
+  document.getElementById("annotation-quality-message").textContent =
+    `${quality.duplicates_removed || 0} duplicate box(es) hidden. ${quality.invalid_boxes || 0} invalid box(es) excluded.\n${(quality.unverified_icon_regions || 0)+(quality.unverified_text_regions || 0)} tap region(s) need visible bounds checked.\n` +
+    (rec.has_accessibility_snapshot ? "Accessibility snapshot is available." : "This capture has no full accessibility snapshot.");
+  document.getElementById("diagnostics-link").href = `/api/annotation-diagnostics/${rec.platform}/${rec.device}/${rec.content_format}/${rec.record_id}`;
 
   document.getElementById("modal-record-title").textContent = rec.record_id;
-  document.getElementById("modal-meta-tag").textContent = `${rec.platform.toUpperCase()} &bull; ${rec.device.toUpperCase()} &bull; ${rec.content_format} &bull; ${rec.orientation.toUpperCase()}`;
+  document.getElementById("modal-meta-tag").textContent = `${rec.platform.toUpperCase()} · ${rec.device.toUpperCase()} · ${rec.content_format} · ${rec.orientation.toUpperCase()}`;
 
-  document.getElementById("curation-status-select").value = rec.curation_status || "approved";
+  document.getElementById("curation-status-select").value = ["approved", "resolved", "needs_review"].includes(rec.curation_status) ? rec.curation_status : "needs_review";
   document.getElementById("curation-notes-input").value = rec.curation_notes || "";
 
   document.getElementById("editor-modal").classList.remove("hidden");
 
   // Load image onto canvas
-  canvasImage = new Image();
-  canvasImage.src = rec.image_url;
-  canvasImage.onload = () => {
-    canvas.width = canvasImage.naturalWidth;
-    canvas.height = canvasImage.naturalHeight;
+  const image = new Image();
+  canvasImage = image;
+  image.onload = () => {
+    if (activeRecord !== rec || canvasImage !== image) return;
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
     redrawCanvas();
     renderAnnotationList();
   };
+  image.onerror = () => {
+    if (activeRecord === rec) document.getElementById("annotation-quality-message").textContent = "Could not load this capture image.";
+  };
+  image.src = rec.image_url;
+  if (rec.has_accessibility_snapshot || recordAnnotations(rec).some((ann) => ann.review_required)) requestAnnotationSuggestions("detect");
 }
 
-function closeEditor() {
+function closeEditor(force = false) {
+  if (!force && editorDirty && !confirm("Discard unsaved annotation changes?")) return;
   document.getElementById("editor-modal").classList.add("hidden");
   activeRecord = null;
+  isDrawing = false;
+  editorDirty = false;
+  suggestionRequest++;
 }
 
 function redrawCanvas() {
-  if (!canvasImage) return;
+  if (!canvasImage || !canvasImage.complete || !canvasImage.naturalWidth) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(canvasImage, 0, 0);
 
   // Draw existing boxes
-  currentAnnotations.forEach((ann) => {
+  const drawBox = (ann, index, pending = false) => {
+    if (inspectedBox && !matchingBox(inspectedBox, ann)) return;
     const [x1, y1, x2, y2] = ann.xyxy;
     const color = CLASS_COLORS[ann.class] || "#ffffff";
 
+    if (!pending && ann.interaction_xyxy && document.getElementById("show-interaction-boxes").checked) {
+      const [tx1, ty1, tx2, ty2] = ann.interaction_xyxy;
+      ctx.strokeStyle = "#94a3b8";
+      ctx.lineWidth = Math.max(2, canvas.width*.0015);
+      ctx.setLineDash([6, 10]);
+      ctx.strokeRect(tx1, ty1, tx2-tx1, ty2-ty1);
+      ctx.setLineDash([]);
+    }
+
     ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(4, canvas.width * 0.003);
+    ctx.lineWidth = inspectedBox ? 0.75 : Math.max(1.5, canvas.width * (index === selectedAnnotation && !pending ? 0.0024 : 0.0016));
+    ctx.setLineDash(pending ? [12, 8] : []);
     ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    ctx.setLineDash([]);
+    if (inspectedBox) return;
 
     // Label tag
     ctx.fillStyle = color;
-    const fontSize = Math.max(22, canvas.width * 0.015);
+    const fontSize = Math.max(16, canvas.width * 0.013);
     ctx.font = `600 ${fontSize}px Inter, sans-serif`;
-    const text = `${ann.class}`;
+    const text = `${pending ? "? " : ""}${ann.class}`;
     const textWidth = ctx.measureText(text).width;
 
-    ctx.fillRect(x1, Math.max(0, y1 - fontSize - 6), textWidth + 12, fontSize + 6);
+    const tx = Math.min(x1, Math.max(0, canvas.width-textWidth-12));
+    const ty = y1 >= fontSize+6 ? y1-fontSize-6 : Math.min(y2+2, canvas.height-fontSize-6);
+    ctx.fillRect(tx, ty, textWidth + 12, fontSize + 6);
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(text, x1 + 6, Math.max(fontSize, y1 - 4));
-  });
+    ctx.fillText(text, tx + 6, ty + fontSize);
+  };
+  currentAnnotations.forEach((ann, index) => drawBox(ann, index));
+  currentProposals.forEach((ann) => drawBox(ann, -1, true));
+}
+
+function fitEditorImage() {
+  inspectedBox = null;
+  const viewport = document.getElementById("canvas-container");
+  viewport.classList.remove("zoomed");
+  canvas.style.width = "";
+  canvas.style.height = "";
+  viewport.scrollLeft = 0;
+  viewport.scrollTop = 0;
+  document.getElementById("canvas-zoom-tools").classList.add("hidden");
+  redrawCanvas();
+}
+
+function zoomToBox(index, pending = false) {
+  const annotation = (pending ? currentProposals : currentAnnotations)[index];
+  if (!annotation || !canvasImage?.complete || !canvasImage.naturalWidth) return;
+  const viewport = document.getElementById("canvas-container");
+  inspectedBox = annotation;
+  viewport.classList.add("zoomed");
+  canvas.style.width = `${2*canvas.width}px`;
+  canvas.style.height = `${2*canvas.height}px`;
+  const [x1, y1, x2, y2] = annotation.xyxy;
+  viewport.scrollLeft = x1+x2-viewport.clientWidth/2;
+  viewport.scrollTop = y1+y2-viewport.clientHeight/2;
+  document.getElementById("canvas-zoom-label").textContent = `${annotation.class} · 200%`;
+  document.getElementById("canvas-zoom-tools").classList.remove("hidden");
+  redrawCanvas();
 }
 
 function getCanvasCoordinates(e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
-  return [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
+  return [Math.max(0, Math.min(canvas.width, (e.clientX - rect.left) * scaleX)), Math.max(0, Math.min(canvas.height, (e.clientY - rect.top) * scaleY))];
 }
 
 function onMouseDown(e) {
+  if (e.button !== 0 || !activeRecord || !canvasImage?.complete) return;
   const [x, y] = getCanvasCoordinates(e);
   isDrawing = true;
   drawStartX = x;
@@ -579,10 +771,10 @@ function onMouseUp(e) {
   const x2 = Math.round(Math.max(drawStartX, currX));
   const y2 = Math.round(Math.max(drawStartY, currY));
 
-  // Minimum size check (must be at least 10px wide and tall)
-  if (x2 - x1 > 10 && y2 - y1 > 10) {
-    const selectedClass = document.getElementById("draw-class-select").value;
-    currentAnnotations.push({
+  const selectedClass = document.getElementById("draw-class-select").value;
+  // A thin hand-drawn track can be expanded around its measured center.
+  if (x2-x1 > 3 && y2-y1 >= (selectedClass === "progress_bar" ? 1 : 4)) {
+    let annotation = {
       class: selectedClass,
       xyxy: [x1, y1, x2, y2],
       source_label: selectedClass,
@@ -590,10 +782,22 @@ function onMouseUp(e) {
       source: "studio_manual_curation",
       resource_id: "",
       visible_evidence: "",
-    });
+    };
+    annotation = reviewedGeometry(selectedAnnotation === null ? annotation : currentAnnotations[selectedAnnotation], annotation.xyxy, selectedClass);
+    if (currentAnnotations.some((old, index) => index !== selectedAnnotation && old.class === selectedClass && boxIoU(old.xyxy, annotation.xyxy) >= .98)) {
+      document.getElementById("annotation-quality-message").textContent = "That box already exists. Select Edit to adjust it.";
+      redrawCanvas();
+      return;
+    }
+    if (selectedAnnotation === null) currentAnnotations.push(annotation);
+    else currentAnnotations[selectedAnnotation] = annotation;
+    if (inspectedBox) inspectedBox = annotation;
+    markEditorChanged();
+    if (selectedAnnotation !== null) editAnnotation(selectedAnnotation);
     redrawCanvas();
     renderAnnotationList();
   }
+  redrawCanvas();
 }
 
 function renderAnnotationList() {
@@ -605,12 +809,18 @@ function renderAnnotationList() {
       const color = CLASS_COLORS[ann.class] || "#ffffff";
       const [x1, y1, x2, y2] = ann.xyxy.map(Math.round);
       return `
-      <div class="ann-item" style="border-left-color: ${color}">
-        <div>
-          <span class="ann-item-cls">${ann.class}</span>
+      <div class="ann-item ${selectedAnnotation === idx ? "selected" : ""}" style="border-left-color: ${color}">
+        <div class="ann-details">
+          <span class="ann-item-cls">${escapeHtml(ann.class)}</span>
           <div class="ann-item-coords">[${x1}, ${y1}, ${x2}, ${y2}]</div>
+          <div class="ann-source">${escapeHtml(ann.source || "source unknown")}</div>
+          <div class="ann-source">${escapeHtml(ann.geometry_policy || visualPolicy(ann.class))}${ann.interaction_xyxy ? " · tap region preserved" : ""}</div>
         </div>
-        <button class="ann-delete-btn" onclick="deleteAnnotation(${idx})" title="Remove box">✕</button>
+        <div class="review-actions">
+          <button class="btn btn-xs btn-ghost" onclick="zoomToBox(${idx})">Zoom</button>
+          <button class="btn btn-xs btn-ghost" onclick="editAnnotation(${idx})">Edit</button>
+          <button class="ann-delete-btn" onclick="deleteAnnotation(${idx})" title="Remove box">✕</button>
+        </div>
       </div>
     `;
     })
@@ -619,14 +829,183 @@ function renderAnnotationList() {
 
 function deleteAnnotation(idx) {
   currentAnnotations.splice(idx, 1);
+  markEditorChanged();
+  editAnnotation(null);
   redrawCanvas();
   renderAnnotationList();
+}
+
+function editAnnotation(index) {
+  selectedAnnotation = index;
+  const editing = index !== null && currentAnnotations[index];
+  document.getElementById("box-editor-heading").textContent = editing ? `Edit Box ${index + 1}` : "Add New Box";
+  document.getElementById("box-editor-help").textContent = editing ? "Change class or coordinates, then apply. Drag on the image to replace this box." : "Select class, then drag over a visible control to draw its box.";
+  document.getElementById("box-geometry-editor").classList.toggle("hidden", !editing);
+  if (editing) {
+    const select = document.getElementById("draw-class-select");
+    if (![...select.options].some((option) => option.value === editing.class)) select.add(new Option(editing.class, editing.class));
+    select.value = editing.class;
+    ["box-x1", "box-y1", "box-x2", "box-y2"].forEach((id, i) => document.getElementById(id).value = editing.xyxy[i]);
+  }
+  if (canvas) {
+    redrawCanvas();
+    renderAnnotationList();
+  }
+}
+
+function applyBoxChanges() {
+  if (selectedAnnotation === null || !activeRecord) return;
+  const box = ["box-x1", "box-y1", "box-x2", "box-y2"].map((id) => Number(document.getElementById(id).value));
+  if (box.some((value) => !Number.isFinite(value)) || box[0] < 0 || box[1] < 0 || box[2] > canvas.width || box[3] > canvas.height || box[2] <= box[0] || box[3] <= box[1]) {
+    alert("Enter a valid box inside the image.");
+    return;
+  }
+  const cls = document.getElementById("draw-class-select").value;
+  if (currentAnnotations.some((ann, i) => i !== selectedAnnotation && ann.class === cls && boxIoU(ann.xyxy, box) >= .98)) {
+    alert("That annotation already exists.");
+    return;
+  }
+  currentAnnotations[selectedAnnotation] = reviewedGeometry(currentAnnotations[selectedAnnotation], box, cls);
+  markEditorChanged();
+  if (inspectedBox) zoomToBox(selectedAnnotation);
+  editAnnotation(selectedAnnotation);
+}
+
+async function suggestAnnotations() {
+  return requestAnnotationSuggestions("suggest");
+}
+
+async function refineIconBoxes() {
+  return requestAnnotationSuggestions("refine-geometry");
+}
+
+async function requestAnnotationSuggestions(kind) {
+  if (!activeRecord) return;
+  const rec = activeRecord;
+  const request = ++suggestionRequest;
+  const automatic = kind === "detect";
+  const retainPending = (item) => kind !== "suggest" || ["native_capture", "geometry_recovery"].includes(item.proposal_kind);
+  const requestPending = currentProposals.filter(retainPending);
+  const button = document.getElementById("btn-suggest-annotations");
+  button.disabled = true;
+  document.getElementById("btn-refine-geometry").disabled = true;
+  button.textContent = automatic ? "Checking Saved Capture..." : "Checking Image...";
+  document.getElementById("suggestion-message").textContent = automatic ? "Checking the saved capture for missed controls and box sizing..." : kind === "refine-geometry" ? "Checking visible bounds and padding..." : "Checking accessibility, visible geometry and reviewed icon examples...";
+  try {
+    const response = await fetch(`/api/${kind}/${rec.platform}/${rec.device}/${rec.content_format}/${rec.record_id}`, {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({annotations: [...currentAnnotations, ...requestPending]})
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(typeof result.detail === "string" ? result.detail : "Suggestion request failed");
+    if (activeRecord !== rec || request !== suggestionRequest) return;
+    // Read the live state after the response: the user may have accepted a
+    // native candidate while this request was running.
+    let retained = currentProposals.filter(retainPending);
+    const retainedIds = new Set(retained.map((item) => item.proposal_id));
+    let superseded = 0;
+    proposalDecisions.forEach((item) => { if (item.decision === "pending" && !retainedIds.has(item.proposal_id)) { item.decision = "superseded"; superseded++; } });
+    const incoming = [];
+    for (const suggestion of result.proposals) {
+      if (proposalDecisions.some((decision) => decision.decision === "rejected" && Array.isArray(decision.xyxy) &&
+        (decision.proposal_id === suggestion.proposal_id || sameControl(decision, suggestion)))) continue;
+      const item = {...suggestion};
+      if (item.action === "replace_geometry") {
+        const pending = retained.find((old) => matchingBox(old, item.replaces));
+        const reviewed = currentAnnotations.some((old) => matchingBox(old, item.replaces));
+        if (automatic && pending) {
+          retained = retained.filter((old) => old !== pending);
+          const decision = proposalDecisions.find((old) => old.proposal_id === pending.proposal_id && old.decision === "pending");
+          if (decision) decision.decision = "superseded";
+          if (inspectedBox === pending) inspectedBox = item;
+          delete item.action;
+          delete item.replaces;
+        } else if (!reviewed && !pending) continue;
+      } else if ([...currentAnnotations, ...retained, ...incoming].some((old) => sameControl(old, item))) continue;
+      if (automatic) item.proposal_kind = "geometry_recovery";
+      incoming.push(item);
+    }
+    for (const diagnostic of result.geometry_diagnostics || []) {
+      if (!diagnostic.manual_geometry) continue;
+      const candidate = retained.find((ann) => matchingBox(ann, diagnostic.manual_geometry));
+      if (candidate) {
+        candidate.manual_geometry = diagnostic.reason;
+        const decision = proposalDecisions.find((ann) => ann.proposal_id === candidate.proposal_id && ann.decision === "pending");
+        if (decision) decision.manual_geometry = diagnostic.reason;
+      }
+    }
+    currentProposals = [...retained, ...incoming];
+    proposalDecisions.push(...incoming.map((ann) => ({...ann, decision: "pending"})));
+    if (incoming.length || superseded) {
+      if (automatic) document.getElementById("curation-status-select").value = "needs_review";
+      else markEditorChanged();
+    }
+    const reasons = (result.geometry_diagnostics || []).filter((item) => !currentProposals.some((proposal) => proposal.class === item.class)).map((item) => `${item.class}: ${item.reason}`);
+    document.getElementById("suggestion-message").textContent = `${automatic ? `Recovered ${incoming.length} additional candidate(s). ` : ""}${currentProposals.length} suggestion(s) to review.\n${result.warnings.join("\n")}\n${[...new Set(reasons)].join("\n")}`;
+    renderSuggestions();
+    redrawCanvas();
+  } catch (error) {
+    if (activeRecord === rec && request === suggestionRequest) document.getElementById("suggestion-message").textContent = error.message;
+  } finally {
+    if (activeRecord === rec && request === suggestionRequest) {
+      button.disabled = false;
+      button.textContent = "Suggest Missing Labels";
+      document.getElementById("btn-refine-geometry").disabled = false;
+    }
+  }
+}
+
+function renderSuggestions() {
+  document.getElementById("suggestion-list").innerHTML = currentProposals.map((ann, index) => {
+    const score = ann.proposal_kind === "native_capture" ? "Native iPad candidate" : ann.confidence !== undefined ? `Model score ${Math.round(ann.confidence * 100)}%` : ann.similarity !== undefined ? `Template similarity ${Math.round(ann.similarity * 100)}%` : ann.proposal_kind === "geometry_recovery" || ann.source === "studio_icon_geometry" ? "Geometry checked" : "Accessibility match";
+    return `<div class="ann-item suggestion-item" style="border-left-color:${CLASS_COLORS[ann.class] || "#94a3b8"}">
+      <strong>${escapeHtml(ann.class)}</strong><div class="ann-source">${escapeHtml(score)} · ${escapeHtml(ann.source)}</div>
+      <div class="ann-source">${ann.action === "replace_geometry" ? "Replace existing box with visible geometry" : escapeHtml(ann.manual_geometry || ann.geometry_policy || visualPolicy(ann.class))}</div>
+      <div class="ann-item-coords">[${ann.xyxy.map(Math.round).join(", ")}]</div>
+      <div class="review-actions"><button class="btn btn-xs btn-ghost" onclick="zoomToBox(${index}, true)">Zoom</button><button class="btn btn-xs btn-success" onclick="reviewSuggestion(${index}, true)" ${ann.manual_geometry ? "disabled" : ""}>Accept</button><button class="btn btn-xs btn-ghost" onclick="reviewSuggestion(${index}, false)">Reject</button></div></div>`;
+  }).join("");
+}
+
+function reviewSuggestion(index, accept) {
+  const proposal = currentProposals[index];
+  if (!proposal || (accept && proposal.manual_geometry)) return;
+  const accepted = {...proposal, review_required: false, geometry_reviewed: true, reviewed_by: "human", reviewed_at: new Date().toISOString()};
+  let replacedPending = null;
+  if (accept && proposal.action === "replace_geometry") {
+    const target = currentAnnotations.findIndex((ann) => matchingBox(ann, proposal.replaces));
+    if (target === -1) {
+      replacedPending = currentProposals.find((item) => item !== proposal && matchingBox(item, proposal.replaces));
+      if (!replacedPending) {
+        alert("The original box changed. Run Apply Annotation Rules again.");
+        return;
+      }
+      currentAnnotations.push({...replacedPending, ...accepted});
+      const originalDecision = proposalDecisions.find((item) => item.proposal_id === replacedPending.proposal_id && item.decision === "pending");
+      if (originalDecision) originalDecision.decision = "superseded";
+    } else {
+      currentAnnotations[target] = {...currentAnnotations[target], ...accepted};
+    }
+  } else if (accept && !currentAnnotations.some((ann) => sameControl(ann, proposal))) {
+    currentAnnotations.push(accepted);
+  }
+  const decision = [...proposalDecisions].reverse().find((item) => item.proposal_id === proposal.proposal_id && item.decision === "pending");
+  if (decision) decision.decision = accept ? "accepted" : "rejected";
+  currentProposals = currentProposals.filter((item) => item !== proposal && item !== replacedPending);
+  if (inspectedBox === proposal && !accept) fitEditorImage();
+  if (replacedPending && inspectedBox === replacedPending) inspectedBox = accepted;
+  markEditorChanged();
+  renderSuggestions();
+  renderAnnotationList();
+  redrawCanvas();
 }
 
 async function saveCuration() {
   if (!activeRecord) return;
   const status = document.getElementById("curation-status-select").value;
   const notes = document.getElementById("curation-notes-input").value;
+  if (["approved", "resolved"].includes(status) && currentProposals.length) {
+    alert("Accept or reject remaining suggestions, or save with needs_review status.");
+    return;
+  }
 
   const btn = document.getElementById("btn-save-curation");
   btn.disabled = true;
@@ -638,7 +1017,7 @@ async function saveCuration() {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ annotations: currentAnnotations, status, notes }),
+        body: JSON.stringify({ annotations: currentAnnotations, status, notes, reviewed_proposals: proposalDecisions }),
       }
     );
 
@@ -647,11 +1026,12 @@ async function saveCuration() {
       setTimeout(() => {
         btn.textContent = "💾 Save Curation";
         btn.disabled = false;
-        closeEditor();
+        closeEditor(true);
         loadRecords();
       }, 700);
     } else {
-      alert("Failed to save curation.");
+      const error = await res.json();
+      alert(typeof error.detail === "string" ? error.detail : "Failed to save curation.");
       btn.disabled = false;
       btn.textContent = "💾 Save Curation";
     }
@@ -677,7 +1057,7 @@ async function deleteFrame(platform, device, content_format, recordId) {
     );
     if (res.ok) {
       if (activeRecord && activeRecord.record_id === recordId) {
-        closeEditor();
+        closeEditor(true);
       }
       loadRecords();
     }
@@ -757,6 +1137,14 @@ function setupEventListeners() {
   document.getElementById("btn-stop-auto").addEventListener("click", stopAutoCapture);
 
   document.getElementById("btn-save-curation").addEventListener("click", saveCuration);
+  document.getElementById("btn-suggest-annotations").addEventListener("click", suggestAnnotations);
+  document.getElementById("btn-refine-geometry").addEventListener("click", refineIconBoxes);
+  document.getElementById("btn-fit-image").addEventListener("click", fitEditorImage);
+  document.getElementById("show-interaction-boxes").addEventListener("change", redrawCanvas);
+  document.getElementById("btn-update-box").addEventListener("click", applyBoxChanges);
+  document.getElementById("btn-add-box-mode").addEventListener("click", () => editAnnotation(null));
+  document.getElementById("curation-status-select").addEventListener("change", () => {editorDirty = true;});
+  document.getElementById("curation-notes-input").addEventListener("input", () => {editorDirty = true;});
 
   document.getElementById("btn-delete-frame").addEventListener("click", () => {
     if (activeRecord) {

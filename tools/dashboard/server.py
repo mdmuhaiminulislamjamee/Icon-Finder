@@ -9,10 +9,14 @@ import io
 import json
 import logging
 import os
+import re
 import subprocess
+import sys
 import tempfile
+import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -21,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pymobiledevice3.remote.userspace_tunnel import establish_userspace_rsd
 from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
@@ -40,6 +44,82 @@ app.add_middleware(
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_ROOT = PROJECT_ROOT / "data" / "platform_specialist_yolo"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from tools.annotation_quality import CLASSES, clean_annotations
+from tools.annotation_geometry import MIN_TRACK_HEIGHT_RATIO, POLICY_VERSION, geometry_policy, inside_track, needs_visual_geometry
+from tools.sync_from_device import _atomic_write, _safe_name
+
+CURATION_LOCK = threading.RLock()
+CAPTURE_LOCK = asyncio.Lock()
+
+
+@app.get("/api/health")
+def api_health():
+    return {"service": "media_collector_dashboard", "status": "ok", "process_id": os.getpid()}
+
+
+def capture_timeout_seconds():
+    try:
+        timeout = int(os.environ.get("CAPTURE_TIMEOUT_SECONDS", "180"))
+        if timeout <= 0:
+            raise ValueError
+        return timeout
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="CAPTURE_TIMEOUT_SECONDS must be a positive integer") from exc
+
+
+def xctest_succeeded(return_code, log):
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", log)
+    return (return_code == 0
+            and not re.search(r"\[case\]\s+FAIL\b|\bfail=[1-9]\d*", text)
+            and "[plan] finish" in text
+            and re.search(r"\brun=[1-9]\d*\s+fail=0\b", text) is not None)
+
+
+def collection_path(platform, device, content_format, record_id=None):
+    try:
+        for value in (platform, device, content_format, *([record_id] if record_id is not None else [])):
+            _safe_name(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    path = (DATA_ROOT / platform / device / content_format / "collected").resolve()
+    if not path.is_relative_to(DATA_ROOT.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid collection path")
+    return path
+
+
+def load_record(collected, record_id):
+    annotations = collected / "annotations.jsonl"
+    if annotations.exists():
+        for line in annotations.read_text(encoding="utf-8-sig").splitlines():
+            if line.strip():
+                record = json.loads(line)
+                if record.get("record_id") == record_id:
+                    return record
+    raise HTTPException(status_code=404, detail="Capture record not found")
+
+
+def image_path(collected, record_id):
+    for suffix in (".png", ".jpg", ".jpeg"):
+        path = (collected / "images" / f"{record_id}{suffix}").resolve()
+        if path.is_relative_to(collected) and path.is_file():
+            return path
+    raise HTTPException(status_code=404, detail="Image not found")
+
+
+def read_json(path, default=None):
+    if not path.exists():
+        return {} if default is None else default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=f"Cannot read {path.name}; existing data was preserved") from exc
+
+
+def write_json(path, value):
+    _atomic_write(path, (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
 
 
 # ---------------------------------------------------------
@@ -50,7 +130,7 @@ def get_connected_device():
     """Queries pymobiledevice3 for connected USB devices."""
     try:
         res = subprocess.run(
-            ["pymobiledevice3", "usbmux", "list"],
+            [sys.executable, "-m", "pymobiledevice3", "usbmux", "list"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -169,6 +249,12 @@ def api_device():
     return get_connected_device()
 
 
+@app.get("/api/annotation-classes")
+def api_annotation_classes():
+    return {"classes": CLASSES, "geometry_policy_version": POLICY_VERSION,
+            "geometry_policies": {cls: geometry_policy(cls) for cls in CLASSES}}
+
+
 @app.get("/api/device/stream")
 async def api_device_stream():
     """Streams live MJPEG frames directly from connected iOS device."""
@@ -233,7 +319,7 @@ def api_live_frame():
     temp_img = Path(temp_dir) / f"live_{int(time.time()*1000)}.png"
     try:
         res = subprocess.run(
-            ["pymobiledevice3", "developer", "dvt", "screenshot", str(temp_img)],
+            [sys.executable, "-m", "pymobiledevice3", "developer", "dvt", "screenshot", str(temp_img)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -260,11 +346,22 @@ class CaptureRequest(BaseModel):
     content_format: str = "short_video"
     capture_state: str = "playing_controls_visible"
     target_bundle: Optional[str] = None
+    udid: Optional[str] = None
 
 
 @app.post("/api/capture")
 async def api_capture(req: CaptureRequest):
-    """Triggers the XCTest runner on the connected device with stream bandwidth coordination."""
+    """Run one verified XCTest capture and import only its newly published ID."""
+    if CAPTURE_LOCK.locked():
+        raise HTTPException(status_code=409, detail="A capture is already running")
+    async with CAPTURE_LOCK:
+        return await _capture_one(req)
+
+
+async def _capture_one(req):
+    from tools.sync_from_device import snapshot_device_captures, sync_all_from_device
+
+    timeout = capture_timeout_seconds()
     target_bundle = req.target_bundle
     if not target_bundle:
         bundle_map = {
@@ -277,60 +374,57 @@ async def api_capture(req: CaptureRequest):
         }
         target_bundle = bundle_map.get(req.platform.lower(), "com.google.ios.youtube")
 
-    cmd = [
-        "pymobiledevice3",
-        "developer",
-        "dvt",
-        "xcuitest",
-        "com.grozziie.media-collector.capture.xctrunner",
-        "--target-bundle-id",
-        "com.grozziie.media-collector",
-        "--env",
-        f"PLATFORM_NAME_INPUT={req.platform}",
-        "--env",
-        f"CONTENT_FORMAT={req.content_format}",
-        "--env",
-        f"CAPTURE_STATE={req.capture_state}",
-        "--env",
-        f"TARGET_BUNDLE={target_bundle}",
-    ]
-
     await stream_mgr.pause()
     try:
-        loop = asyncio.get_event_loop()
-        res = await loop.run_in_executor(
-            None,
-            lambda: subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                timeout=25,
-            ),
-        )
-        log_out = res.stdout + "\n" + res.stderr
-        success = res.returncode == 0
-
-        # Auto-sync newly captured dataset files from the iPad to PC
-        synced_info = {}
-        if success:
+        loop = asyncio.get_running_loop()
+        try:
+            before = await loop.run_in_executor(None, partial(snapshot_device_captures, udid=req.udid))
+        except Exception as exc:
+            return {"success": False, "capture_success": False, "stage": "prepare",
+                    "message": "Could not read the iPad capture index. No capture was started.", "log": str(exc)}
+        udid = before["udid"]
+        with tempfile.TemporaryDirectory(prefix="studio-capture-") as directory:
+            log_path = Path(directory) / "capture-log.txt"
+            cmd = [
+                sys.executable, "-m", "pymobiledevice3", "developer", "dvt", "xcuitest",
+                "com.grozziie.media-collector.capture.xctrunner",
+                "--target-bundle-id", "com.grozziie.media-collector",
+                "--udid", udid, "--timeout", str(timeout), "--output-log", str(log_path),
+                "--env", f"PLATFORM_NAME_INPUT={req.platform}",
+                "--env", f"CONTENT_FORMAT={req.content_format}",
+                "--env", f"CAPTURE_STATE={req.capture_state}",
+                "--env", f"TARGET_BUNDLE={target_bundle}",
+            ]
             try:
-                import sys
-                sys.path.insert(0, str(PROJECT_ROOT))
-                from tools.sync_from_device import sync_all_from_device
-                synced_info = await loop.run_in_executor(None, sync_all_from_device)
-            except Exception as se:
-                log_out += f"\nSync notice: {se}"
-
-        return {
-            "success": success,
-            "return_code": res.returncode,
-            "log": log_out,
-            "synced": synced_info,
-            "message": "Capture completed & synced from iPad!" if success else "Capture failed. Check log.",
-        }
+                res = await loop.run_in_executor(None, partial(
+                    subprocess.run, cmd, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=timeout + 15,
+                    env={**os.environ, "PYTHONIOENCODING": "utf-8"}))
+            finally:
+                file_log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
+        log_out = "\n".join((res.stdout or "", res.stderr or "", file_log))
+        if not xctest_succeeded(res.returncode, log_out):
+            return {"success": False, "capture_success": False, "return_code": res.returncode,
+                    "log": log_out, "synced": {},
+                    "message": "Capture test failed or did not confirm successful completion. Nothing was imported."}
+        try:
+            after = await loop.run_in_executor(None, partial(snapshot_device_captures, udid=udid))
+            fresh_ids = set(after["record_ids"]) - set(before["record_ids"])
+            if len(fresh_ids) != 1:
+                return {"success": False, "capture_success": True, "return_code": res.returncode,
+                        "log": log_out, "synced": {}, "new_record_ids": sorted(fresh_ids),
+                        "message": f"The test passed, but {len(fresh_ids)} new records were published instead of one. Automatic import was held for review."}
+            synced = await loop.run_in_executor(None, partial(sync_all_from_device, udid=udid, record_ids=fresh_ids, require_sidecar=True))
+        except Exception as exc:
+            return {"success": False, "capture_success": True, "return_code": res.returncode,
+                    "log": log_out + f"\nImport error: {exc}", "synced": {},
+                    "message": "Capture completed on the iPad, but its import failed. The saved capture remains on the iPad."}
+        return {"success": bool(synced.get("success")), "capture_success": True,
+                "return_code": res.returncode, "log": log_out, "synced": synced,
+                "new_record_ids": sorted(fresh_ids), "message": "Capture completed. " + synced["message"]}
     except subprocess.TimeoutExpired:
-        return {"success": False, "message": "Capture execution timed out after 25 seconds."}
+        return {"success": False, "capture_success": False,
+                "message": f"Capture did not finish within {timeout + 15} seconds (test limit: {timeout} seconds). Check the iPad before retrying."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
@@ -339,13 +433,13 @@ async def api_capture(req: CaptureRequest):
 
 @app.post("/api/device/sync")
 async def api_device_sync():
-    """Manually triggers dataset synchronization from the connected iPad."""
-    import sys
-    sys.path.insert(0, str(PROJECT_ROOT))
+    """Import unseen captures, preserving the history of deleted/imported IDs."""
     from tools.sync_from_device import sync_all_from_device
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(None, sync_all_from_device)
-    return {"success": True, **result}
+    try:
+        return await loop.run_in_executor(None, sync_all_from_device)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Capture import failed: {exc}") from exc
 
 
 @app.get("/api/records")
@@ -404,9 +498,12 @@ def api_records():
                                     if is_curated
                                     else rec.get("raw_annotations", [])
                                 )
+                                display_annotations, quality = clean_annotations(
+                                    effective_annotations, rec.get("context", {}).get("image_size")
+                                )
 
-                                img_file = images_dir / f"{rid}.png"
-                                img_exists = img_file.exists()
+                                img_exists = any((images_dir / f"{rid}{suffix}").is_file()
+                                                 for suffix in (".png", ".jpg", ".jpeg"))
 
                                 records.append({
                                     "record_id": rid,
@@ -434,6 +531,11 @@ def api_records():
                                         rid, {}
                                     ).get("curated_annotations", []),
                                     "effective_annotations": effective_annotations,
+                                    "display_annotations": display_annotations,
+                                    "annotation_quality": quality,
+                                    "proposal_review": overrides.get(rid, {}).get("proposal_review", []),
+                                    "has_accessibility_snapshot": bool(rec.get("accessibility_snapshot"))
+                                        or (collected_dir / "accessibility" / f"{rid}.json").is_file(),
                                     "is_curated": is_curated,
                                     "curation_status": overrides.get(
                                         rid, {}
@@ -456,35 +558,15 @@ def api_records():
 @app.get("/api/image/{platform}/{device}/{content_format}/{record_id}")
 def api_image(platform: str, device: str, content_format: str, record_id: str):
     """Serves the screenshot image."""
-    img_path = (
-        DATA_ROOT
-        / platform
-        / device
-        / content_format
-        / "collected"
-        / "images"
-        / f"{record_id}.png"
-    )
-    if not img_path.exists():
-        # Try jpg
-        img_path = (
-            DATA_ROOT
-            / platform
-            / device
-            / content_format
-            / "collected"
-            / "images"
-            / f"{record_id}.jpg"
-        )
-    if not img_path.exists():
-        raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(img_path)
+    collected = collection_path(platform, device, content_format, record_id)
+    return FileResponse(image_path(collected, record_id))
 
 
 class CuratePayload(BaseModel):
     annotations: List[dict]
-    status: str = "approved"
+    status: str = "needs_review"
     notes: str = ""
+    reviewed_proposals: List[dict] = Field(default_factory=list)
 
 
 @app.post("/api/curate/{platform}/{device}/{content_format}/{record_id}")
@@ -496,53 +578,137 @@ def api_curate(
     payload: CuratePayload,
 ):
     """Saves updated bounding boxes to curation/annotation_overrides.json and logs to audit."""
-    coll_dir = (
-        DATA_ROOT / platform / device / content_format / "collected"
-    )
+    coll_dir = collection_path(platform, device, content_format, record_id)
+    load_record(coll_dir, record_id)
+    if payload.status not in {"approved", "resolved", "needs_review"}:
+        raise HTTPException(status_code=422, detail="Choose approved, resolved or needs_review")
+    with Image.open(image_path(coll_dir, record_id)) as image:
+        image_size = image.size
+    annotations, quality = clean_annotations(payload.annotations, image_size)
+    if quality["invalid_boxes"] or quality["clipped_boxes"]:
+        raise HTTPException(status_code=422, detail="Fix invalid or out-of-image boxes before saving")
+    if any(ann.get("review_required") for ann in annotations):
+        raise HTTPException(status_code=422, detail="Accept or reject suggestions before saving them as annotations")
+    if payload.status in {"approved", "resolved"} and any(needs_visual_geometry(ann) for ann in annotations):
+        raise HTTPException(status_code=422, detail="Raw accessibility tap regions need visible geometry review. Refine the boxes or use Edit and Apply Box Changes after checking each target.")
+    if payload.status in {"approved", "resolved"} and any(
+            item.get("decision") == "pending" for item in payload.reviewed_proposals):
+        raise HTTPException(status_code=422, detail="Review remaining suggestions or save as needs_review")
+    if payload.status in {"approved", "resolved"}:
+        tracks = [ann["xyxy"] for ann in annotations if ann["class"] == "progress_bar"]
+        min_height = max(1, round(image_size[1]*MIN_TRACK_HEIGHT_RATIO))
+        if any(box[3]-box[1] < min_height for box in tracks):
+            raise HTTPException(status_code=422, detail=f"Center each progress box on its visible track and make it at least {min_height} px high for this image.")
+        if any(ann["class"] == "playhead" and not any(inside_track(ann["xyxy"], track) for track in tracks)
+               for ann in annotations):
+            raise HTTPException(status_code=422, detail="Place each visible playhead so its center is inside a progress bar box.")
     curation_dir = coll_dir / "curation"
     curation_dir.mkdir(parents=True, exist_ok=True)
 
     overrides_file = curation_dir / "annotation_overrides.json"
     audit_file = curation_dir / "annotation_audit.jsonl"
 
-    overrides = {}
-    if overrides_file.exists():
-        try:
-            with open(overrides_file, "r", encoding="utf-8") as f:
-                overrides = json.load(f)
-        except Exception:
-            overrides = {}
+    with CURATION_LOCK:
+        overrides = read_json(overrides_file)
+        previous = overrides.get(record_id)
+        entry = {"status": payload.status, "notes": payload.notes,
+                 "updated_at": datetime.now(timezone.utc).isoformat(),
+                 "curated_annotations": annotations,
+                 "proposal_review": payload.reviewed_proposals}
+        # Save exact before/after geometry and review decisions in the audit.
+        audit_entry = {"record_id": record_id, "action": "curation_save", "timestamp": entry["updated_at"],
+                       "box_count": len(annotations), "status": payload.status, "notes": payload.notes,
+                       "previous_override": previous, "saved_override": entry,
+                       "reviewed_proposals": payload.reviewed_proposals,
+                       "duplicates_removed": quality["duplicates_removed"]}
+        with open(audit_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(audit_entry, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        overrides[record_id] = entry
+        write_json(overrides_file, overrides)
 
-    overrides[record_id] = {
-        "status": payload.status,
-        "notes": payload.notes,
-        "updated_at": datetime.utcnow().isoformat() + "Z",
-        "curated_annotations": payload.annotations,
-    }
+    return {"success": True, "record_id": record_id, "saved_boxes": len(annotations), "quality": quality}
 
-    with open(overrides_file, "w", encoding="utf-8") as f:
-        json.dump(overrides, f, indent=2)
 
-    # Append audit log
-    audit_entry = {
-        "record_id": record_id,
-        "action": "curation_save",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "box_count": len(payload.annotations),
-        "status": payload.status,
-        "notes": payload.notes,
-    }
-    with open(audit_file, "a", encoding="utf-8") as f:
-        f.write(json.dumps(audit_entry) + "\n")
+class SuggestPayload(BaseModel):
+    annotations: Optional[List[dict]] = None
 
-    return {"success": True, "record_id": record_id, "saved_boxes": len(payload.annotations)}
+
+@app.post("/api/refine-geometry/{platform}/{device}/{content_format}/{record_id}")
+def api_refine_geometry(platform: str, device: str, content_format: str, record_id: str, payload: SuggestPayload):
+    from tools.annotation_assistant import refine_geometry
+
+    collected = collection_path(platform, device, content_format, record_id)
+    record = load_record(collected, record_id)
+    overrides = read_json(collected / "curation" / "annotation_overrides.json")
+    existing = payload.annotations if payload.annotations is not None else overrides.get(record_id, {}).get(
+        "curated_annotations", record.get("raw_annotations", []))
+    existing, _ = clean_annotations(existing, record.get("context", {}).get("image_size"))
+    result = refine_geometry(image_path(collected, record_id), existing)
+    result.update(record_id=record_id, generated_at=datetime.now(timezone.utc).isoformat())
+    write_json(collected / "curation" / "proposals" / f"{record_id}.json", result)
+    return result
+
+
+@app.post("/api/suggest/{platform}/{device}/{content_format}/{record_id}")
+def api_suggest(platform: str, device: str, content_format: str, record_id: str, payload: SuggestPayload):
+    return _suggest_annotations(platform, device, content_format, record_id, payload, automatic=False)
+
+
+@app.post("/api/detect/{platform}/{device}/{content_format}/{record_id}")
+def api_detect(platform: str, device: str, content_format: str, record_id: str, payload: SuggestPayload):
+    """Recover missing boxes automatically from this capture's saved evidence."""
+    return _suggest_annotations(platform, device, content_format, record_id, payload, automatic=True)
+
+
+def _suggest_annotations(platform, device, content_format, record_id, payload, *, automatic):
+    from tools.annotation_assistant import suggest
+
+    collected = collection_path(platform, device, content_format, record_id)
+    record = load_record(collected, record_id)
+    overrides = read_json(collected / "curation" / "annotation_overrides.json")
+    existing = payload.annotations if payload.annotations is not None else overrides.get(record_id, {}).get(
+        "curated_annotations", record.get("raw_annotations", []))
+    existing, _ = clean_annotations(existing, record.get("context", {}).get("image_size"))
+    snapshot_file = collected / "accessibility" / f"{record_id}.json"
+    snapshot = read_json(snapshot_file) if snapshot_file.exists() else None
+    options = {"include_fallbacks": False} if automatic else {}
+    result = suggest(image_path(collected, record_id), record, existing, DATA_ROOT, platform, content_format, snapshot, **options)
+    result["record_id"] = record_id
+    result["generated_at"] = datetime.now(timezone.utc).isoformat()
+    folder = "detections" if automatic else "proposals"
+    write_json(collected / "curation" / folder / f"{record_id}.json", result)
+    return result
+
+
+@app.get("/api/annotation-diagnostics/{platform}/{device}/{content_format}/{record_id}")
+def api_annotation_diagnostics(platform: str, device: str, content_format: str, record_id: str):
+    collected = collection_path(platform, device, content_format, record_id)
+    record = load_record(collected, record_id)
+    snapshot_file = collected / "accessibility" / f"{record_id}.json"
+    overrides = read_json(collected / "curation" / "annotation_overrides.json")
+    effective = overrides.get(record_id, {}).get("curated_annotations", record.get("raw_annotations", []))
+    display, quality = clean_annotations(effective, record.get("context", {}).get("image_size"))
+    return {"record": record, "override": overrides.get(record_id), "display_annotations": display,
+            "quality": quality, "classes": CLASSES,
+            "accessibility_snapshot": read_json(snapshot_file) if snapshot_file.exists() else record.get("accessibility_snapshot"),
+            "suggestions": read_json(collected / "curation" / "proposals" / f"{record_id}.json")}
 
 
 @app.delete("/api/record/{platform}/{device}/{content_format}/{record_id}")
 def api_delete_record(
     platform: str, device: str, content_format: str, record_id: str
 ):
-    """Deletes the screenshot and removes its line from annotations.jsonl and overrides."""
+    """Delete a frame and remember its ID so it cannot return on the next import."""
+    from tools.sync_from_device import remember_deleted_capture
+
+    try:
+        remember_deleted_capture(platform, device, content_format, record_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Could not save capture deletion history: {exc}") from exc
     coll_dir = (
         DATA_ROOT / platform / device / content_format / "collected"
     )
@@ -551,7 +717,7 @@ def api_delete_record(
     overrides_file = coll_dir / "curation" / "annotation_overrides.json"
 
     # 1. Delete image
-    for ext in [".png", ".jpg"]:
+    for ext in [".png", ".jpg", ".jpeg"]:
         p = images_dir / f"{record_id}{ext}"
         if p.exists():
             try:
@@ -586,6 +752,12 @@ def api_delete_record(
         except Exception:
             pass
 
+    # Capture-bound diagnostics must be removed along with their screenshot.
+    for path in (coll_dir / "accessibility" / f"{record_id}.json",
+                 coll_dir / "curation" / "proposals" / f"{record_id}.json"):
+        if path.is_file():
+            path.unlink()
+
     return {"success": True, "deleted_record_id": record_id}
 
 
@@ -598,8 +770,6 @@ class PackageRequest(BaseModel):
 @app.post("/api/package")
 def api_package(req: PackageRequest):
     """Packages the dataset folder into a clean ZIP with SHA256SUMS.txt."""
-    import sys
-    sys.path.insert(0, str(PROJECT_ROOT))
     from tools.package_handover import package_handover
 
     target_dir = (
@@ -641,6 +811,6 @@ app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "=" * 60)
-    print("🚀 MediaControl Collector Studio starting at http://localhost:8000")
+    print("MediaControl Collector Studio starting at http://localhost:8000")
     print("=" * 60 + "\n")
     uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")

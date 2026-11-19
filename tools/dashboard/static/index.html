@@ -29,8 +29,8 @@
     </div>
 
     <div class="nav-right">
-      <button class="btn btn-secondary" id="btn-sync-device" title="Pull all captures and annotations from iPad">
-        <span class="icon">📥</span> Sync iPad Files
+      <button class="btn btn-secondary" id="btn-sync-device" title="Import new captures only. Previously imported or deleted captures are skipped.">
+        <span class="icon">📥</span> Import New Captures
       </button>
       <button class="btn btn-secondary" id="btn-refresh" title="Reload records">
         <span class="icon">🔄</span> Refresh
@@ -154,23 +154,23 @@
           <!-- Single Capture Controls -->
           <div id="section-single-capture" class="action-box">
             <button id="btn-trigger-capture" class="btn btn-xl btn-accent">
-              <span class="icon">📸</span> Trigger Single Capture (4s)
+              <span class="icon">📸</span> Capture One Frame
             </button>
             <div id="countdown-overlay" class="countdown-overlay hidden">
               <div class="countdown-bar" id="countdown-bar"></div>
-              <span id="countdown-text">Tap iPad screen to show controls! (4s)</span>
+              <span id="countdown-text">When YouTube opens, tap to show controls. Snapshot processing may take several minutes.</span>
             </div>
           </div>
 
           <!-- Continuous Auto-Capture Controls -->
           <div id="section-auto-capture" class="auto-capture-box hidden">
             <div class="auto-interval-row">
-              <label>Capture Interval:</label>
+              <label>Pause After Each Capture:</label>
               <select id="auto-interval-select" class="select-sm">
-                <option value="4">Every 4 seconds</option>
-                <option value="5" selected>Every 5 seconds</option>
-                <option value="7">Every 7 seconds</option>
-                <option value="10">Every 10 seconds</option>
+                <option value="4">4 seconds</option>
+                <option value="5" selected>5 seconds</option>
+                <option value="7">7 seconds</option>
+                <option value="10">10 seconds</option>
               </select>
               <span class="session-badge" id="auto-counter-badge">Session: 0 frames</span>
             </div>
@@ -183,7 +183,7 @@
                 ⏹ Stop Auto-Capture
               </button>
             </div>
-            <p class="auto-hint">While running, you can swipe up/down, pause, play, or scrub on the iPad. The system will snap 1 frame every 5s automatically!</p>
+            <p class="auto-hint">Each capture finishes its screenshot, accessibility snapshot and import before the selected pause begins. Keep controls visible when YouTube opens. The loop stops if a capture needs attention.</p>
           </div>
 
           <div id="capture-status-box" class="status-box hidden">
@@ -257,6 +257,8 @@
               <option value="all">All Statuses</option>
               <option value="curated">Curated Only</option>
               <option value="raw">Raw Only</option>
+              <option value="needs_review">Needs Review</option>
+              <option value="approved">Approved / Resolved</option>
             </select>
           </div>
 
@@ -298,15 +300,33 @@
 
       <div class="editor-body">
         <!-- Canvas Area -->
-        <div class="canvas-container" id="canvas-container">
-          <canvas id="annotation-canvas"></canvas>
+        <div class="canvas-pane">
+          <div class="canvas-container" id="canvas-container">
+            <canvas id="annotation-canvas"></canvas>
+          </div>
+          <div id="canvas-zoom-tools" class="canvas-zoom-tools hidden">
+            <span id="canvas-zoom-label"></span>
+            <button id="btn-fit-image" class="btn btn-xs btn-secondary" type="button">Fit Image</button>
+          </div>
           <div id="canvas-draw-hint" class="canvas-hint">Drag mouse on screen to draw a new box</div>
         </div>
 
         <!-- Sidebar Inspector -->
         <aside class="editor-sidebar">
+          <div class="sidebar-block review-panel">
+            <h4>Annotation Review</h4>
+            <p id="annotation-quality-message" class="help-text" role="status"></p>
+            <button id="btn-suggest-annotations" class="btn btn-sm btn-primary btn-block">Suggest Missing Labels</button>
+            <button id="btn-refine-geometry" class="btn btn-sm btn-secondary btn-block">Apply Annotation Rules</button>
+            <label class="help-text"><input id="show-interaction-boxes" type="checkbox" /> Show original tap regions</label>
+            <p class="help-text">Use Zoom to check each box. Icons get about 18% padding clear of nearby text. Subscribe includes the full button. Skip Ad includes its text and adjacent icon.</p>
+            <p class="help-text">Center the progress box on the visible track. Include a separate playhead only when its center is inside that box and the thumb is visible.</p>
+            <a id="diagnostics-link" class="help-text" target="_blank" rel="noopener">View capture diagnostics</a>
+            <div id="suggestion-message" class="help-text" role="status" aria-live="polite"></div>
+            <div id="suggestion-list" class="annotation-list suggestion-list"></div>
+          </div>
           <div class="sidebar-block">
-            <h4>Add New Box</h4>
+            <h4 id="box-editor-heading">Add New Box</h4>
             <div class="form-group">
               <label>Target Class</label>
               <select id="draw-class-select" class="select-sm">
@@ -330,7 +350,19 @@
                 <option value="more_options">more_options</option>
               </select>
             </div>
-            <p class="help-text">Select class, then click & drag over the image to draw.</p>
+            <p id="box-editor-help" class="help-text">Select class, then drag over a visible control to draw its box.</p>
+            <div id="box-geometry-editor" class="hidden">
+              <div class="box-coordinate-grid">
+                <label>Left <input id="box-x1" type="number" step="any" /></label>
+                <label>Top <input id="box-y1" type="number" step="any" /></label>
+                <label>Right <input id="box-x2" type="number" step="any" /></label>
+                <label>Bottom <input id="box-y2" type="number" step="any" /></label>
+              </div>
+              <div class="review-actions">
+                <button id="btn-update-box" class="btn btn-xs btn-primary">Apply Box Changes</button>
+                <button id="btn-add-box-mode" class="btn btn-xs btn-ghost">Add New Box</button>
+              </div>
+            </div>
           </div>
 
           <div class="sidebar-block">
@@ -345,9 +377,9 @@
             <div class="form-group">
               <label>Status</label>
               <select id="curation-status-select" class="select-sm">
+                <option value="needs_review" selected>needs_review</option>
                 <option value="approved">approved (Ground Truth Ready)</option>
                 <option value="resolved">resolved</option>
-                <option value="needs_review">needs_review</option>
               </select>
             </div>
             <div class="form-group">

@@ -6,14 +6,20 @@ This repository provides multiple specialized approaches for locating, parsing, 
 
 | Approach | Technology | Best For | Notebook / Path |
 |:---|:---|:---|:---|
-| **YouTube Media Controls (V11 — 768px)** | Dual-model YOLO (Controls + Playhead Specialist) in TFLite / ONNX | Production YouTube player control detection across Desktop, Mobile, Tablet, and Shorts | [`YouTube_Media_Controls_Colab.ipynb`](./YouTube_Media_Controls_Colab.ipynb) / [`youtube_media_control_models_v11_768/`](./youtube_media_control_models_v11_768/) |
+| **Legacy YouTube Media Controls (V11 — 768px)** | Dual-model YOLO (Controls + Playhead Specialist) in TFLite / ONNX | Historical inference/retraining reference; disabled by default in the current dashboard | [`YouTube_Media_Controls_Colab.ipynb`](./YouTube_Media_Controls_Colab.ipynb) / [`youtube_media_control_models_v11_768/`](./youtube_media_control_models_v11_768/) |
 | **Qwen3-VL Vision-Language Model** | Qwen3-VL-2B-Instruct (4-bit NF4) | Zero-shot visual reasoning and semantic icon searching ("settings gear", "share icon") | [`Qwen3_VL_Icon_Finder_Colab.ipynb`](./Qwen3_VL_Icon_Finder_Colab.ipynb) |
 | **OmniParser v2** | YOLOv8 Icon Detector + Florence-2 Captioner + EasyOCR | Full-screen UI layout parsing and candidate ranking | [`OmniParser_Colab_Fixedv2.ipynb`](./OmniParser_Colab_Fixedv2.ipynb) |
 | **Universal Classical Icon Finder** | OpenCV Template & Contour Feature Matching | Fast, zero-GPU offline detection without neural network dependencies | [`universal_classical_icon_finder/`](./universal_classical_icon_finder/) |
 
 ---
 
-## 🚀 YouTube Media Controls Model (V11 — 768px)
+The current MediaCollector workflow uses accessibility evidence, visible-pixel
+geometry, reviewed icon examples and human curation. It does not require the
+legacy YouTube model. See [`tools/dashboard/README.md`](./tools/dashboard/README.md)
+and `MediaCollector_iOS_Developer_Prompts_Updated.txt` for the current capture and
+native handoff contract. No replacement neural model has been validated here.
+
+## Legacy YouTube Media Controls Model (V11 — 768px)
 
 A decoupled two-model system optimized for video player interfaces:
 1. **`youtube_controls_progress`** (13 classes): Detects `play`, `pause`, `volume_on`, `volume_muted`, `fullscreen`, `exit_fullscreen`, `previous`, `next`, `like`, `dislike`, `seek_backward`, `seek_forward`, and the full `progress_bar`.

@@ -56,7 +56,7 @@ def package_handover(collected_path: str, output_zip: str = None):
         except Exception:
             pass
 
-    images = list(images_dir.glob("*.png")) + list(images_dir.glob("*.jpg"))
+    images = list(images_dir.glob("*.png")) + list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.jpeg"))
 
     print("\n" + "=" * 50)
     print("DATASET HANDOVER SUMMARY")
@@ -77,6 +77,10 @@ def package_handover(collected_path: str, output_zip: str = None):
         files_to_hash.append(overrides_file)
     if audit_file.exists():
         files_to_hash.append(audit_file)
+    # Diagnostics and unaccepted proposals travel with the handover, while
+    # remaining separate from raw records and effective curated annotations.
+    files_to_hash.extend(sorted((collected / "accessibility").glob("*.json")))
+    files_to_hash.extend(sorted((curation_dir / "proposals").glob("*.json")))
     for img in sorted(images):
         files_to_hash.append(img)
 
