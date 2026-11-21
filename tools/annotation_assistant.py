@@ -12,10 +12,11 @@ from pathlib import Path
 import sys
 import threading
 
-from tools.annotation_quality import accessibility_proposals, box_iou, clean_annotations
-from tools.annotation_geometry import (POLICY_VERSION, geometry_policy, geometry_proposals,
-                                       localize_control, localize_timeline, needs_visual_geometry,
-                                       valid_box, visible_neighbors)
+from tools.annotation_quality import (accessibility_proposals, box_iou, clean_annotations, youtube_player_box,
+                                      youtube_shorts_toolbar_box)
+from tools.annotation_geometry import (FULLSCREEN_GLYPHS, PLAYBACK_GLYPHS, POLICY_VERSION, TRACK_CLASSES, geometry_policy,
+                                       geometry_proposals, localize_control, localize_shorts_playback, localize_shorts_speaker,
+                                       localize_timeline, needs_visual_geometry, valid_box, visible_neighbors)
 
 ROOT = Path(__file__).resolve().parents[1]
 DELIVERY = ROOT / "youtube_media_control_models_v11_768"
@@ -178,15 +179,15 @@ def refine_geometry(image_path, annotations):
     with Image.open(image_path) as image:
         rgb = np.asarray(image.convert("RGB"))
     proposals, diagnostics = geometry_proposals(rgb, annotations)
+    proposals, superseded = _resolve_verified_labels(proposals, annotations)
     return {"schema": "studio_annotation_proposals_v1", "geometry_policy_version": POLICY_VERSION,
             "image_sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
             "proposals": _proposal_ids(proposals), "geometry_diagnostics": diagnostics,
+            "superseded_proposals": superseded,
             "warnings": ["Zoom in to review each replacement. Draw any ambiguous bounds manually."]}
 
 
-def _same_visible_control(a, b):
-    if a["class"] != b["class"]:
-        return False
+def _same_visible_box(a, b):
     x, y = a["xyxy"], b["xyxy"]
     if box_iou(x, y) >= .5:
         return True
@@ -199,13 +200,152 @@ def _same_visible_control(a, b):
             and abs(x[1]+x[3]-y[1]-y[3])/2 <= tolerance)
 
 
-def _same_control(a, b):
-    if a["class"] != b["class"]:
-        return False
+def _same_control_location(a, b):
     first, second = a.get("interaction_xyxy"), b.get("interaction_xyxy")
     if valid_box(first) and valid_box(second) and box_iou(list(map(float, first)), list(map(float, second))) >= .95:
         return True
-    return _same_visible_control(a, b)
+    return _same_visible_box(a, b)
+
+
+def _same_control(a, b):
+    return a["class"] == b["class"] and _same_control_location(a, b)
+
+
+def _conflicts_with_verified_label(verified, other):
+    correct, old = verified["class"], other["class"]
+    if correct == old:
+        return False
+    can_relabel = (
+        correct in FULLSCREEN_GLYPHS and old in FULLSCREEN_GLYPHS
+        and verified.get("geometry_source") == "pixel_fullscreen_arrows"
+    ) or (
+        correct in PLAYBACK_GLYPHS and old in PLAYBACK_GLYPHS
+        and verified.get("geometry_source") == "pixel_shorts_playback"
+    ) or (
+        correct == "ad_more_options" and old == "more_options" and valid_box(verified.get("visible_content_xyxy"))
+    ) or (
+        correct == "ad_progress_bar" and old == "progress_bar" and verified.get("geometry_source") == "pixel_timeline"
+    )
+    return can_relabel and _same_control_location(verified, other)
+
+
+def _box_reference(annotation):
+    return {"class": annotation["class"], "xyxy": annotation["xyxy"]}
+
+
+def _resolve_verified_labels(proposals, existing):
+    """Keep one label when verified pixels distinguish competing annotations."""
+    exclusive_classes = FULLSCREEN_GLYPHS | PLAYBACK_GLYPHS | {"ad_more_options", "ad_progress_bar"}
+    verified = [item for item in proposals if item["class"] in exclusive_classes]
+    pending = [_box_reference(old) for old in existing if old.get("review_required")
+               and any(_conflicts_with_verified_label(item, old) for item in verified)]
+    resolved = []
+    for item in proposals:
+        if any(_conflicts_with_verified_label(other, item) for other in verified):
+            continue
+        conflicts = [old for old in existing if _conflicts_with_verified_label(item, old)]
+        if conflicts:
+            has_correct = any(_same_control(item, old) for old in existing)
+            replacement = item.get("replaces")
+            if replacement and any(_box_reference(old) == replacement for old in conflicts):
+                if has_correct:
+                    continue
+                if replacement in pending:
+                    item = {key: value for key, value in item.items() if key not in {"replaces", "action"}}
+            if not item.get("action") and not has_correct:
+                reviewed = next((old for old in conflicts if not old.get("review_required")), None)
+                if reviewed:
+                    item = dict(item, action="replace_geometry", replaces=_box_reference(reviewed))
+        resolved.append(item)
+    return resolved, pending
+
+
+def _options_after_save(rgb, matched, proposals):
+    for save in matched:
+        if save.get("resource_id") != "id.video.add_to.button" or save.get("visibility_unconfirmed"):
+            continue
+        left, top, edge, bottom = save["interaction_xyxy"]
+        height = bottom-top
+        if not .65*height <= edge-left <= 2.5*height:
+            continue
+        center_y = (top+bottom)/2
+        if any(item["class"] == "more_options" and edge <= (item["xyxy"][0]+item["xyxy"][2])/2 <= edge+2.5*height
+               and abs((item["xyxy"][1]+item["xyxy"][3])/2-center_y) <= .3*height for item in proposals):
+            continue
+        share_edge = max((right for item in matched if item["class"] == "share" and not item.get("visibility_unconfirmed")
+                          for start, upper, right, lower in [item["interaction_xyxy"]]
+                          if edge-2 <= start <= edge+.22*height and abs(upper+lower-top-bottom) <= .36*height), default=edge)
+        region = [share_edge, top, min(rgb.shape[1], share_edge+1.25*height), bottom]
+        visual, _ = localize_control(rgb, {"class": "more_options", "xyxy": region, "ellipsis_orientation": "horizontal",
+                                          "source": "studio_video_action_pixels",
+                                          "descriptor": "Three aligned dots in the video action row beside Save"})
+        if visual:
+            yield visual
+
+
+def _shorts_toolbar_controls(rgb, toolbar, proposals):
+    if toolbar is None:
+        return []
+    left, top, right, bottom = toolbar
+    pitch = bottom-top
+    search_x, row_y = right-1.5*pitch, (top+bottom)/2
+    # The visible Search glyph confirms the right-aligned Shorts toolbar layout.
+    if not any(abs((x+edge)/2-search_x) <= .18*pitch and abs((y+base)/2-row_y) <= .18*pitch
+               for item in proposals if item["class"] == "search" and valid_box(item.get("visible_content_xyxy"))
+               for x, y, edge, base in [item["visible_content_xyxy"]]):
+        return []
+
+    def slot(center):
+        radius = .38*pitch
+        return [round(max(left, center-radius)), round(row_y-radius),
+                round(min(right, center+radius)), round(row_y+radius)]
+
+    speaker_region = slot(search_x-pitch)
+    if not valid_box(speaker_region, (rgb.shape[1], rgb.shape[0])):
+        return []
+    speaker = localize_shorts_speaker(rgb, speaker_region)
+    menu, _ = localize_control(rgb, {"class": "more_options", "xyxy": slot(search_x+pitch),
+                                     "ellipsis_orientation": "horizontal", "source": "studio_shorts_toolbar",
+                                     "visible_evidence": "Three horizontal dots in the Shorts toolbar"})
+    return [dict(item, geometry_source="pixel_shorts_toolbar") for item in (speaker, menu) if item]
+
+
+def _prefer_shorts_toolbar(proposals, existing, toolbar, verified):
+    """Prefer measured toolbar glyphs and retire older pending boxes in the same slot."""
+    superseded = []
+    for item in verified:
+        cls = item["class"]
+        classes = {cls} if cls == "more_options" else {"volume_on", "volume_muted"}
+        identifier = "id.reel_more_button" if cls == "more_options" else "id.elements.button"
+
+        def same_slot(other):
+            if other["class"] not in classes:
+                return False
+            x, y, right, bottom = other["xyxy"]
+            in_row = toolbar[0] <= (x+right)/2 <= toolbar[2] and toolbar[1] <= (y+bottom)/2 <= toolbar[3]
+            return _same_visible_box(item, other) or (other.get("resource_id") == identifier and in_row)
+
+        def current(other):
+            return other["class"] == cls and max(abs(a-b) for a, b in zip(other["xyxy"], item["xyxy"])) <= 1
+
+        previous = [other for other in existing if same_slot(other)]
+        superseded.extend(_box_reference(old) for old in previous if old.get("review_required") and not current(old))
+        x, y, right, bottom = item["visible_content_xyxy"]
+        tap_boxes = (other.get("interaction_xyxy") for other in proposals + previous if other["class"] == cls)
+        tap = next((box for box in tap_boxes if valid_box(box)
+                    and box[0] <= x and box[1] <= y and box[2] >= right and box[3] >= bottom), None)
+        if tap:
+            item = dict(item, interaction_xyxy=tap)
+        proposals = [other for other in proposals if not same_slot(other)]
+        if any(current(old) for old in previous):
+            continue
+        reviewed = next((old for old in previous if not old.get("review_required")), None)
+        if reviewed:
+            if reviewed.get("geometry_source") == "human_drawn":
+                continue
+            item = dict(item, action="replace_geometry", replaces=_box_reference(reviewed))
+        proposals.append(item)
+    return proposals, superseded
 
 
 def suggest(image_path, raw_record, existing, data_root, platform, content_format, snapshot=None, *, include_fallbacks=True):
@@ -219,6 +359,7 @@ def suggest(image_path, raw_record, existing, data_root, platform, content_forma
         image_size = image.size
     warnings, diagnostics = [], []
     proposals, geometry_diagnostics = geometry_proposals(rgb, existing, preserve_reviewed=not include_fallbacks)
+    toolbar, toolbar_controls = None, []
     template_counts = {}
     if snapshot is None:
         snapshot = raw_record.get("accessibility_snapshot")
@@ -228,16 +369,17 @@ def suggest(image_path, raw_record, existing, data_root, platform, content_forma
         else:
             try:
                 matched, diagnostics = accessibility_proposals(snapshot, image_size, allow_unconfirmed_regions=True)
+                player_region = youtube_player_box(snapshot, image_size) if platform == "youtube" else None
                 for candidate in matched:
                     policy = geometry_policy(candidate["class"])
-                    if candidate["class"] == "progress_bar":
-                        timeline, reason = localize_timeline(rgb, candidate)
+                    if candidate["class"] in TRACK_CLASSES:
+                        timeline, reason = localize_timeline(rgb, candidate, player_region)
                         if not timeline and candidate.get("visual_xyxy"):
                             track, reason = localize_control(rgb, candidate)
                             if track:
                                 timeline = [track]
                         proposals.extend(timeline)
-                        geometry_diagnostics.append({"class": "progress_bar", "reason": reason,
+                        geometry_diagnostics.append({"class": candidate["class"], "reason": reason,
                                                      "interaction_xyxy": candidate["interaction_xyxy"]})
                         for diagnostic in diagnostics:
                             if diagnostic["element_index"] == candidate["accessibility_element_index"]:
@@ -245,7 +387,7 @@ def suggest(image_path, raw_record, existing, data_root, platform, content_forma
                     elif candidate["class"] == "playhead":
                         # Associate the visible thumb with its actual track above.
                         continue
-                    elif (policy in {"icon_only", "visible_button", "text_and_icon"}
+                    elif (policy in {"icon_only", "visible_button", "visible_toggle", "text_and_icon", "text_button"}
                           or (policy == "artwork" and candidate.get("visual_xyxy")) or candidate.get("visibility_unconfirmed")):
                         visual, reason = localize_control(rgb, candidate, exclusions=visible_neighbors(existing + matched, candidate, image_size))
                         if visual is None:
@@ -258,6 +400,17 @@ def suggest(image_path, raw_record, existing, data_root, platform, content_forma
                         proposals.append(visual)
                     else:
                         proposals.append(candidate)
+                if platform == "youtube":
+                    proposals.extend(_options_after_save(rgb, matched, proposals))
+                    is_shorts = any((element.get("identifier") or "").startswith(("id.reel_", "eml.shorts-video-title"))
+                                    and element.get("visible", element.get("is_hittable")) is True
+                                    for element in snapshot.get("elements", []))
+                    if is_shorts:
+                        playback = localize_shorts_playback(rgb, player_region)
+                        if playback:
+                            proposals.append(playback)
+                        toolbar = youtube_shorts_toolbar_box(snapshot, image_size)
+                        toolbar_controls = _shorts_toolbar_controls(rgb, toolbar, proposals)
             except (TypeError, ValueError, KeyError) as exc:
                 warnings.append(f"Could not match accessibility snapshot: {exc}")
     else:
@@ -293,23 +446,28 @@ def suggest(image_path, raw_record, existing, data_root, platform, content_forma
         policy = geometry_policy(item["class"])
         if policy in {"visible_track", "visible_marker", "text_and_icon"}:
             continue  # Track, thumb and Skip Ad need the control evidence above.
-        if policy in {"icon_only", "visible_button"}:
+        if policy in {"icon_only", "visible_button", "visible_toggle", "text_button"}:
             exclusions = visible_neighbors(existing + proposals, item, image_size)
             visual, _ = localize_control(rgb, item, exclusions=exclusions)
             if visual:
                 proposals.append(visual)
         else:
             proposals.append(item)
+    proposals, toolbar_superseded = _prefer_shorts_toolbar(proposals, existing, toolbar, toolbar_controls)
+    existing = [old for old in existing if _box_reference(old) not in toolbar_superseded]
+    proposals, superseded = _resolve_verified_labels(proposals, existing)
+    superseded.extend(toolbar_superseded)
     proposals, _ = clean_annotations(proposals, image_size)
     filtered, replacements = [], set()
     for item in proposals:
         if item.get("action") != "replace_geometry":
             old = next((ann for ann in existing if _same_control(ann, item)), None)
             if old is not None:
-                if not needs_visual_geometry(old) or old.get("geometry_reviewed"):
+                if old.get("geometry_reviewed") or not needs_visual_geometry(old):
                     continue
                 item.update(action="replace_geometry", replaces={"class": old["class"], "xyxy": old["xyxy"]})
-                item.setdefault("interaction_xyxy", old.get("interaction_xyxy", old["xyxy"]))
+                if "interaction_xyxy" in old or needs_visual_geometry(old):
+                    item.setdefault("interaction_xyxy", old.get("interaction_xyxy", old["xyxy"]))
         if item.get("action") == "replace_geometry":
             key = json.dumps(item["replaces"], sort_keys=True)
             if key in replacements:
@@ -321,6 +479,7 @@ def suggest(image_path, raw_record, existing, data_root, platform, content_forma
     warnings.append("Suggestions can miss visible controls or misidentify icons. Review the entire image before approving.")
     return {"schema": "studio_annotation_proposals_v1", "image_sha256": image_hash,
             "proposals": proposals, "warnings": warnings, "accessibility_diagnostics": diagnostics,
+            "superseded_proposals": superseded,
             "geometry_diagnostics": geometry_diagnostics, "geometry_policy_version": POLICY_VERSION,
             "template_classes": template_counts, "model_status": model_status,
             "model_classes": list(reference().CONTROL_NAMES) + ["playhead"]

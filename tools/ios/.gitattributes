@@ -1,0 +1,2 @@
+# Unified diff context has a leading space before tab-indented Xcode lines.
+CaptureRunnerHittability.patch text eol=lf whitespace=-space-before-tab

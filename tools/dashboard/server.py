@@ -48,7 +48,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.annotation_quality import CLASSES, clean_annotations
-from tools.annotation_geometry import MIN_TRACK_HEIGHT_RATIO, POLICY_VERSION, geometry_policy, inside_track, needs_visual_geometry
+from tools.annotation_geometry import MIN_TRACK_HEIGHT_RATIO, POLICY_VERSION, TRACK_CLASSES, geometry_policy, inside_track, needs_visual_geometry
 from tools.sync_from_device import _atomic_write, _safe_name
 
 CURATION_LOCK = threading.RLock()
@@ -70,12 +70,22 @@ def capture_timeout_seconds():
         raise HTTPException(status_code=400, detail="CAPTURE_TIMEOUT_SECONDS must be a positive integer") from exc
 
 
-def xctest_succeeded(return_code, log):
+def xctest_failure(return_code, log):
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", log)
-    return (return_code == 0
-            and not re.search(r"\[case\]\s+FAIL\b|\bfail=[1-9]\d*", text)
-            and "[plan] finish" in text
-            and re.search(r"\brun=[1-9]\d*\s+fail=0\b", text) is not None)
+    issue = re.search(r"(?m)^\[case\][ \t]+FAIL[ \t]+([^\r\n]+)", text)
+    if issue:
+        reason = issue[1].strip()
+        if "Failed to determine hittability of" in reason and "Activation point invalid" in reason:
+            return ("The iPad Capture Runner stopped because a control had no valid tap point. "
+                    "Install the updated Capture Runner on the iPad.")
+        return f"The Capture Runner reported a test failure. {reason}"
+    if return_code != 0:
+        return f"The Capture Runner exited with code {return_code}. See View Log for details."
+    if re.search(r"\[case\]\s+FAIL\b|\bfail=[1-9]\d*", text):
+        return "The Capture Runner reported a failed test. See View Log for details."
+    if "[plan] finish" not in text or not re.search(r"\brun=[1-9]\d*\s+fail=0\b", text):
+        return "The Capture Runner did not confirm successful completion. See View Log for details."
+    return None
 
 
 def collection_path(platform, device, content_format, record_id=None):
@@ -399,14 +409,15 @@ async def _capture_one(req):
                 res = await loop.run_in_executor(None, partial(
                     subprocess.run, cmd, capture_output=True, text=True,
                     encoding="utf-8", errors="replace", timeout=timeout + 15,
-                    env={**os.environ, "PYTHONIOENCODING": "utf-8"}))
+                    env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}))
             finally:
                 file_log = log_path.read_text(encoding="utf-8", errors="replace") if log_path.exists() else ""
         log_out = "\n".join((res.stdout or "", res.stderr or "", file_log))
-        if not xctest_succeeded(res.returncode, log_out):
+        failure = xctest_failure(res.returncode, log_out)
+        if failure:
             return {"success": False, "capture_success": False, "return_code": res.returncode,
-                    "log": log_out, "synced": {},
-                    "message": "Capture test failed or did not confirm successful completion. Nothing was imported."}
+                    "stage": "runner", "log": log_out, "synced": {},
+                    "message": failure + " No capture was imported."}
         try:
             after = await loop.run_in_executor(None, partial(snapshot_device_captures, udid=udid))
             fresh_ids = set(after["record_ids"]) - set(before["record_ids"])
@@ -595,11 +606,12 @@ def api_curate(
             item.get("decision") == "pending" for item in payload.reviewed_proposals):
         raise HTTPException(status_code=422, detail="Review remaining suggestions or save as needs_review")
     if payload.status in {"approved", "resolved"}:
-        tracks = [ann["xyxy"] for ann in annotations if ann["class"] == "progress_bar"]
+        tracks = [ann["xyxy"] for ann in annotations if ann["class"] in TRACK_CLASSES]
         min_height = max(1, round(image_size[1]*MIN_TRACK_HEIGHT_RATIO))
         if any(box[3]-box[1] < min_height for box in tracks):
             raise HTTPException(status_code=422, detail=f"Center each progress box on its visible track and make it at least {min_height} px high for this image.")
-        if any(ann["class"] == "playhead" and not any(inside_track(ann["xyxy"], track) for track in tracks)
+        seek_tracks = [ann["xyxy"] for ann in annotations if ann["class"] == "progress_bar"]
+        if any(ann["class"] == "playhead" and not any(inside_track(ann["xyxy"], track) for track in seek_tracks)
                for ann in annotations):
             raise HTTPException(status_code=422, detail="Place each visible playhead so its center is inside a progress bar box.")
     curation_dir = coll_dir / "curation"

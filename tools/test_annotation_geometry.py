@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from PIL import Image, ImageDraw, ImageFont
 
 from tools import annotation_assistant as assistant
-from tools.annotation_geometry import geometry_policy, geometry_proposals, localize_control
+from tools.annotation_geometry import POLICY_VERSION, geometry_policy, geometry_proposals, localize_control
 from tools.annotation_quality import accessibility_proposals, clean_annotations, match_accessibility
 from tools.dashboard import server
 
@@ -28,6 +28,26 @@ def icon_fixture(theme="dark", icon=True):
     font = ImageFont.load_default(size=18)
     draw.text((86, 152), "Save", fill=foreground, font=font)
     draw.text((87, 180), "40K", fill=foreground, font=font)
+    return image
+
+
+def toggle_fixture(state, *, capsule=True):
+    height, width = 124, 168
+    rows, cols = np.ogrid[:height, :width]
+    light = np.uint8(72 + 36*np.sin(cols/8) + 21*np.cos(rows/3+cols/8))
+    image = Image.fromarray(np.stack((light, light+5, light+2), axis=-1))
+    if capsule:
+        mask = Image.new("L", image.size)
+        ImageDraw.Draw(mask).rounded_rectangle((42, 36, 121, 83), radius=24, fill=113)
+        image.paste((210, 210, 210), mask=mask)
+    draw = ImageDraw.Draw(image)
+    if state == "on":
+        draw.ellipse((78, 40, 117, 79), fill="white")
+        draw.polygon(((90, 49), (90, 70), (110, 59)), fill="#131313")
+    elif state == "off":
+        draw.ellipse((46, 40, 85, 79), fill="#565656")
+        draw.rounded_rectangle((57, 49, 62, 70), radius=2, fill="white")
+        draw.rounded_rectangle((68, 49, 73, 70), radius=2, fill="white")
     return image
 
 
@@ -130,6 +150,57 @@ class VisualGeometryTests(unittest.TestCase):
                 ex1, ey1, ex2, ey2 = expected[cls]
                 self.assertTrue(x1 < ex1 and 66 < y1 < ey1 and x2 > ex2 and y2 > ey2)
                 self.assertLess(x2-x1, 60)
+
+    def test_autoplay_boxes_the_full_translucent_toggle_for_both_states(self):
+        for state in ("on", "off"):
+            with self.subTest(state=state):
+                image = toggle_fixture(state)
+                snapshot = {"elements": [{"identifier": "id.autoplay.toggle.button",
+                                           "label": "", "value": f"Auto-play is {state}",
+                                           "frame": [42, 36, 72, 54], "visible": True}]}
+                (candidate,), _ = accessibility_proposals(snapshot, image.size)
+                self.assertEqual(candidate["class"], "autoplay")
+                found, reason = localize_control(np.asarray(image), candidate)
+                self.assertIsNotNone(found, reason)
+                self.assertEqual(found["autoplay_state"], state)
+                self.assertEqual(found["geometry_policy"], "visible_toggle")
+                self.assertTrue(all(abs(got-expected) <= 2 for got, expected in zip(found["xyxy"], [42, 36, 122, 84])))
+                self.assertEqual(found["interaction_xyxy"], [42, 36, 114, 90])
+
+    def test_autoplay_requires_both_the_capsule_and_its_glyph(self):
+        region = {"class": "autoplay", "xyxy": [42, 36, 114, 90], "value": "Auto-play is on"}
+        for state, capsule in ((None, True), ("on", False), ("off", False)):
+            found, _ = localize_control(np.asarray(toggle_fixture(state, capsule=capsule)), region)
+            self.assertIsNone(found)
+
+    def test_fullscreen_replaces_a_stale_pixel_box_with_both_diagonal_arrows(self):
+        image = Image.new("RGB", (246, 214), "#d0b28c")
+        draw = ImageDraw.Draw(image)
+        for row in range(0, image.height, 4):
+            draw.line((0, row, image.width, row+20), fill="#636840", width=2)
+        draw.ellipse((104, 66, 175, 137), fill="#50534a")
+        draw.rectangle((85, 57, 119, 72), fill="#f3f7f4")
+        stale = {"class": "fullscreen", "xyxy": [85, 57, 120, 73], "visual_xyxy": [85, 57, 120, 73],
+                 "interaction_xyxy": [80, 42, 200, 162], "source": "studio_accessibility_matcher",
+                 "geometry_policy": "icon_only", "geometry_policy_version": POLICY_VERSION,
+                 "geometry_source": "pixel_components"}
+        proposals, diagnostics = geometry_proposals(np.asarray(image), [stale], preserve_reviewed=True)
+        self.assertFalse(proposals)
+        self.assertIn("manual_geometry", diagnostics[0])
+        for origin in ((122, 84), (142, 104)):
+            x, y = origin
+            tip, side = (2, 14) if x == 122 else (14, 2)
+            for endpoint in ((side, tip), (tip, side), (side, side)):
+                draw.line((x+tip, y+tip, x+endpoint[0], y+endpoint[1]), fill="white", width=4)
+        proposals, diagnostics = geometry_proposals(np.asarray(image), [stale], preserve_reviewed=True)
+        self.assertEqual(len(proposals), 1, diagnostics)
+        fixed = proposals[0]
+        self.assertEqual(fixed["action"], "replace_geometry")
+        self.assertEqual(fixed["replaces"]["xyxy"], stale["xyxy"])
+        self.assertEqual(fixed["geometry_source"], "pixel_fullscreen_arrows")
+        left, top, right, bottom = fixed["visible_content_xyxy"]
+        self.assertTrue(119 < left <= 124 and 81 < top <= 86 and 156 <= right <= 159 and 118 <= bottom <= 121)
+        self.assertGreater(fixed["xyxy"][1], 73)
 
     def test_padding_is_trimmed_at_a_nearby_control_and_is_not_applied_twice(self):
         image = np.asarray(Image.new("RGB", (160, 220)))

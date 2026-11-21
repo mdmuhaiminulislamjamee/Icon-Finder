@@ -51,6 +51,7 @@ class CaptureWorkflowTests(unittest.TestCase):
         self.assertEqual(args[args.index("--udid")+1], "test-ipad")
         self.assertEqual(runner.call_args.kwargs["timeout"], 195)
         self.assertEqual(runner.call_args.kwargs["env"]["PYTHONIOENCODING"], "utf-8")
+        self.assertEqual(runner.call_args.kwargs["env"]["PYTHONUTF8"], "1")
         importer.assert_called_once_with(udid="test-ipad", record_ids={"fresh"}, require_sidecar=True)
         self.resumer.assert_awaited_once()
 
@@ -72,9 +73,27 @@ class CaptureWorkflowTests(unittest.TestCase):
         self.assertFalse(response["success"])
         importer.assert_not_called()
 
+    def test_invalid_activation_point_calls_out_the_installed_runner(self):
+        response, _, importer, _ = self.invoke(file_log=(
+            '[case]  FAIL   Capture/testCollect  Failed to determine hittability of "id.ui.generic.button" '
+            'Button: Activation point invalid and no suggested hit points based on element frame\n'
+        ))
+        self.assertFalse(response["success"])
+        self.assertIn("no valid tap point", response["message"])
+        self.assertIn("updated Capture Runner", response["message"])
+        importer.assert_not_called()
+
     def test_ansi_log_markers_are_supported(self):
         response, _, _, _ = self.invoke("\x1b[32m[plan] finish\x1b[0m\nrun=1 fail=0")
         self.assertTrue(response["success"])
+
+    def test_expected_hit_point_issue_can_complete_and_import(self):
+        response, _, importer, _ = self.invoke(
+            "[case]  finish Capture/testCollect  status=passed dur=27.0s\n"
+            "[suite] finish Capture run=1 fail=0 une=0 skip=0 exp_fail=1 unc=0\n[plan] finish"
+        )
+        self.assertTrue(response["success"])
+        importer.assert_called_once_with(udid="test-ipad", record_ids={"fresh"}, require_sidecar=True)
 
     def test_process_error_wins_over_passed_log(self):
         response, _, importer, _ = self.invoke(returncode=1)

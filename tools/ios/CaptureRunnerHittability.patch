@@ -1,0 +1,156 @@
+diff --git a/Capture.swift b/Capture.swift
+--- a/Capture.swift
++++ b/Capture.swift
+@@ -2,11 +2,23 @@
+ import XCTest
+ import UIKit
+
+-final class Capture: XCTestCase {
++final class Capture: MCProbeTestCase {
+     let bundles = ["youtube":"com.google.ios.youtube","tiktok":"com.zhiliaoapp.musically","instagram":"com.burbn.instagram","spotify":"com.spotify.client","netflix":"com.netflix.Netflix","twitch":"tv.twitch"]
++    private var collectionCompleted = false
++
++    override func tearDown() {
++        if testRun?.failureCount == 0 {
++            XCTAssertTrue(collectionCompleted, "Capture ended before the runner finished processing its queue.")
++        }
++        super.tearDown()
++    }
+
+     @MainActor func testCollect() throws {
+-        let env = ProcessInfo.processInfo.environment
++        try collect(ProcessInfo.processInfo.environment)
++        collectionCompleted = true
++    }
++
++    @MainActor private func collect(_ env: [String: String]) throws {
+         let stage = try inbox()
+         if env["RETRY_ONLY"] != "1" {
+             let packet = try capture(env)
+@@ -123,8 +135,13 @@
+             let query = app.descendants(matching: node.elementType).matching(
+                 NSPredicate(format: "identifier == %@ AND label == %@", node.identifier, node.label))
+             let live = parent == nil ? app : query.element(boundBy: position)
+-            if live.exists && live.frame.equalTo(f) {
+-                let hit = live.isHittable
++            var hittability: Bool?
++            if finite, !f.isEmpty, f.intersects(frame), live.exists, live.frame.equalTo(f) {
++                var issue: NSString?
++                hittability = probeHittability(live, issueDescription: &issue)?.boolValue
++                if let issue { element["hittability_error"] = issue as String }
++            }
++            if let hit = hittability {
+                 element["visible"] = hit
+                 element["is_hittable"] = hit
+             } else {
+diff --git a/HittabilityProbe.h b/HittabilityProbe.h
+new file mode 100644
+--- /dev/null
++++ b/HittabilityProbe.h
+@@ -0,0 +1,8 @@
++#import <XCTest/XCTest.h>
++
++@interface MCProbeTestCase : XCTestCase
++// A nil result means XCTest could not determine an activation point.
++- (NSNumber * _Nullable)probeHittability:(XCUIElement * _Nonnull)element
++                        issueDescription:(NSString * _Nullable * _Nonnull)issueDescription
++    NS_SWIFT_NAME(probeHittability(_:issueDescription:));
++@end
+diff --git a/HittabilityProbe.m b/HittabilityProbe.m
+new file mode 100644
+--- /dev/null
++++ b/HittabilityProbe.m
+@@ -0,0 +1,40 @@
++#import "HittabilityProbe.h"
++
++static BOOL MCInvalidActivationPoint(NSString *message) {
++    return [message containsString:@"Failed to determine hittability of"] &&
++           [message containsString:@"Activation point invalid"];
++}
++
++@implementation MCProbeTestCase {
++    BOOL _probing;
++    NSString *_matchedIssue;
++}
++
++- (void)recordIssue:(XCTIssue *)issue {
++    if (_probing && MCInvalidActivationPoint(issue.compactDescription)) {
++        _matchedIssue = [issue.compactDescription copy];
++        return;
++    }
++    [super recordIssue:issue];
++}
++
++- (NSNumber *)probeHittability:(XCUIElement *)element issueDescription:(NSString **)issueDescription {
++    NSNumber *value = nil;
++    _matchedIssue = nil;
++    _probing = YES;
++    @try {
++        value = @(element.isHittable);
++    } @catch (NSException *exception) {
++        if (!_matchedIssue && !MCInvalidActivationPoint(exception.reason)) {
++            @throw;
++        }
++        if (!_matchedIssue) {
++            _matchedIssue = [exception.reason copy];
++        }
++    } @finally {
++        _probing = NO;
++    }
++    *issueDescription = _matchedIssue;
++    return _matchedIssue ? nil : value;
++}
++@end
+diff --git a/MediaCollector.xcodeproj/project.pbxproj b/MediaCollector.xcodeproj/project.pbxproj
+--- a/MediaCollector.xcodeproj/project.pbxproj
++++ b/MediaCollector.xcodeproj/project.pbxproj
+@@ -7,6 +7,7 @@
+ 	objects = {
+
+ /* Begin PBXBuildFile section */
++		CEB100000000000000000003 /* HittabilityProbe.m in Sources */ = {isa = PBXBuildFile; fileRef = CEB100000000000000000001 /* HittabilityProbe.m */; };
+ 		5763A8B2F08947CB98ECAA99 /* CaptureStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D3DEDD2D297448A9B0F905F; };
+ 		4B4C8A4C34E24D6090D69512 /* VisualGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 917F634029FC422D92F5A1BA; };
+ 		178C8FAC4DB349DDB28FFC30 /* Taxonomy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFCC38A05DC48B297A5D19D; };
+@@ -29,6 +30,8 @@
+ /* End PBXContainerItemProxy section */
+
+ /* Begin PBXFileReference section */
++		CEB100000000000000000001 /* HittabilityProbe.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = HittabilityProbe.m; sourceTree = "<group>"; };
++		CEB100000000000000000002 /* HittabilityProbe.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = HittabilityProbe.h; sourceTree = "<group>"; };
+ 		9D3DEDD2D297448A9B0F905F /* CaptureStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureStore.swift; sourceTree = "<group>"; };
+ 		917F634029FC422D92F5A1BA /* VisualGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualGeometry.swift; sourceTree = "<group>"; };
+ 		2CFCC38A05DC48B297A5D19D /* Taxonomy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Taxonomy.swift; sourceTree = "<group>"; };
+@@ -94,6 +97,8 @@
+ 				D354B6E2DB66EA94855E56EA /* Collector.swift */,
+ 				9D3DEDD2D297448A9B0F905F /* CaptureStore.swift */,
+ 				548BA04044ABE3D90B6FE6BE /* Capture.swift */,
++				CEB100000000000000000001 /* HittabilityProbe.m */,
++				CEB100000000000000000002 /* HittabilityProbe.h */,
+ 				917F634029FC422D92F5A1BA /* VisualGeometry.swift */,
+ 				2CFCC38A05DC48B297A5D19D /* Taxonomy.swift */,
+ 			);
+@@ -191,6 +196,7 @@
+ 			files = (
+ 				175128BA091D3ECFFBCA2B7B /* Shared.swift in Sources */,
+ 				E1F91A00C9F669730F270203 /* Capture.swift in Sources */,
++				CEB100000000000000000003 /* HittabilityProbe.m in Sources */,
+ 				4B4C8A4C34E24D6090D69512 /* VisualGeometry.swift in Sources */,
+ 				178C8FAC4DB349DDB28FFC30 /* Taxonomy.swift in Sources */,
+ 			);
+@@ -280,6 +286,7 @@
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+ 				PRODUCT_BUNDLE_IDENTIFIER = "com.grozziie.media-collector.capture";
++				SWIFT_OBJC_BRIDGING_HEADER = HittabilityProbe.h;
+ 				SDKROOT = iphoneos;
+ 				SWIFT_VERSION = 5.0;
+ 				TARGETED_DEVICE_FAMILY = "1,2";
+@@ -397,6 +404,7 @@
+ 				GENERATE_INFOPLIST_FILE = YES;
+ 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+ 				PRODUCT_BUNDLE_IDENTIFIER = "com.grozziie.media-collector.capture";
++				SWIFT_OBJC_BRIDGING_HEADER = HittabilityProbe.h;
+ 				SDKROOT = iphoneos;
+ 				SWIFT_VERSION = 5.0;
+ 				TARGETED_DEVICE_FAMILY = "1,2";

@@ -11,14 +11,20 @@ import math
 
 POLICY_VERSION = "media_control_visual_geometry_v3"
 ICON_PADDING = .18
+SHORTS_PLAYBACK_SEARCH_RATIO = .052
 TRACK_HEIGHT_RATIO = .0135
 MIN_TRACK_HEIGHT_RATIO = .012
 TRANSPORT_GLYPHS = {"play", "previous", "next"}
+PLAYBACK_GLYPHS = {"play", "pause"}
+FULLSCREEN_GLYPHS = {"fullscreen", "exit_fullscreen"}
+ELLIPSIS_GLYPHS = {"more_options", "ad_more_options"}
+TRACK_CLASSES = {"progress_bar", "ad_progress_bar"}
 CAPTIONED_ICONS = {"like", "dislike", "comments", "save", "share", "remix", "ask", "download", "report_problem"}
 SPECIAL_POLICIES = {
-    "progress_bar": "visible_track", "playhead": "visible_marker",
+    **dict.fromkeys(TRACK_CLASSES, "visible_track"), "playhead": "visible_marker",
     "sound": "artwork", "channel": "artwork", "autoplay": "visible_toggle",
-    "subscribe": "visible_button", "skip_ad": "text_and_icon",
+    "subscribe": "visible_button", "ad_cta": "visible_button",
+    "visit_advertiser": "text_button", "skip_ad": "text_and_icon",
     "time_display": "text_readout", "more_videos": "composite_control",
 }
 INTERACTION_SOURCES = {"ios_xctest_accessibility", "studio_accessibility_matcher",
@@ -46,7 +52,7 @@ def valid_box(value, image_size=None):
 def needs_visual_geometry(annotation):
     if annotation.get("class") == "subscribe" and annotation.get("geometry_policy") == "text_control":
         return not annotation.get("geometry_reviewed")
-    return (geometry_policy(annotation.get("class")) in {"icon_only", "visible_button", "text_and_icon"}
+    return (geometry_policy(annotation.get("class")) in {"icon_only", "visible_button", "visible_toggle", "text_and_icon", "text_button"}
             and annotation.get("source") in INTERACTION_SOURCES
             and not annotation.get("geometry_reviewed")
             and not valid_box(annotation.get("visual_xyxy")))
@@ -116,19 +122,30 @@ def _intersection_area(a, b):
     return max(0, min(a[2], b[2])-max(a[0], b[0])) * max(0, min(a[3], b[3])-max(a[1], b[1]))
 
 
-def _dots(boxes):
-    dots = [item for item in boxes if .55 <= (item[2]-item[0])/max(1, item[3]-item[1]) <= 1.8]
+def _dots(boxes, mask, orientation):
+    height, width = mask.shape
+    dots = []
+    for item in boxes:
+        left, top, right, bottom = item
+        dot_width, dot_height = right-left, bottom-top
+        if (max(3, .055*min(height, width)) <= min(dot_width, dot_height)
+                and max(dot_width, dot_height) <= .24*min(height, width)
+                and .65 <= dot_width/dot_height <= 1.55
+                and .54 <= (mask[top:bottom, left:right] > 0).mean() <= .96):
+            dots.append(item)
     result = []
+    axes = {"horizontal": (0,), "vertical": (1,)}.get(orientation, (0, 1))
     for group in combinations(dots[:30], 3):
         sizes = [max(item[2]-item[0], item[3]-item[1]) for item in group]
-        if max(sizes) > 1.7*min(sizes):
+        if max(sizes) > 1.45*min(sizes):
             continue
         centers = [((item[0]+item[2])/2, (item[1]+item[3])/2) for item in group]
-        for axis in (0, 1):
+        for axis in axes:
             ordered = sorted(centers, key=lambda item: item[axis])
             a, b = ordered[1][axis]-ordered[0][axis], ordered[2][axis]-ordered[1][axis]
-            if (a >= .7*max(sizes) and .65 <= b/max(a, 1) <= 1.55
-                    and max(item[1-axis] for item in centers)-min(item[1-axis] for item in centers) <= .6*max(sizes)):
+            if (1.1*max(sizes) <= a <= 3*max(sizes) and .76 <= b/max(a, 1) <= 1.32
+                    and max(item[1-axis] for item in centers)-min(item[1-axis] for item in centers) <= .42*max(sizes)
+                    and abs(ordered[1][1-axis]-(height, width)[axis]/2) <= .3*(height, width)[axis]):
                 result.append(_union(group))
     return result
 
@@ -145,8 +162,9 @@ def _pause_pairs(boxes):
     return result
 
 
-def _control_region(annotation, size):
-    for key in ("interaction_xyxy", "localization_region_xyxy", "xyxy"):
+def _control_region(annotation, size, *, prefer_localization=False):
+    keys = ("localization_region_xyxy", "interaction_xyxy") if prefer_localization else ("interaction_xyxy", "localization_region_xyxy")
+    for key in (*keys, "xyxy"):
         if valid_box(annotation.get(key), size):
             box = list(map(float, annotation[key]))
             return [math.floor(box[0]), math.floor(box[1]), math.ceil(box[2]), math.ceil(box[3])]
@@ -212,6 +230,17 @@ def _padded_icon(glyph, size, exclusions):
     return padded
 
 
+def _horizontal_triangle(contour, rect, *, points_left=False):
+    import cv2
+
+    _, top, width, height = rect
+    triangle = cv2.approxPolyDP(contour, .065*cv2.arcLength(contour, True), True)
+    if len(triangle) != 3 or not .35 <= cv2.contourArea(contour)/(width*height) <= .68:
+        return False
+    base_top, base_bottom, tip = sorted(triangle[:, 0].tolist(), reverse=points_left)
+    return abs(base_top[0]-base_bottom[0]) <= .3*width and top+.28*height <= tip[1] <= top+.72*height
+
+
 def _transport_glyph(rgb, region, cls):
     import cv2
     import numpy as np
@@ -239,12 +268,7 @@ def _transport_glyph(rgb, region, cls):
                 if (not .18*size <= h <= .73*size or not .55 <= w/h <= 1.45
                         or abs(x+w/2-width/2) > .17*size or abs(y+h/2-height/2) > .12*size):
                     continue
-                triangle = cv2.approxPolyDP(contour, .065*cv2.arcLength(contour, True), True)
-                if len(triangle) != 3 or not .35 <= cv2.contourArea(contour)/(w*h) <= .68:
-                    continue
-                points = sorted(triangle[:, 0].tolist(), reverse=cls == "previous")
-                base, tip = points[:2], points[2]
-                if abs(base[0][0]-base[1][0]) > .3*w or not y+.28*h <= tip[1] <= y+.72*h:
+                if not _horizontal_triangle(contour, (x, y, w, h), points_left=cls == "previous"):
                     continue
                 glyph = [x, y, x+w, y+h]
                 if cls != "play":
@@ -267,13 +291,241 @@ def _transport_glyph(rgb, region, cls):
     return None
 
 
-def _subscribe_button(rgb, region, label_box):
+def _has_shorts_overlay_disc(rgb, center_x, center_y, glyph_height):
+    import numpy as np
+
+    angles = np.arange(96) * (2*np.pi/96)
+    radii = np.arange(math.ceil(1.35*glyph_height), math.floor(2.65*glyph_height)+1)[:, None]
+    margin = max(2, round(.08*glyph_height))
+    if radii[-1, 0]+margin >= min(center_x, center_y, rgb.shape[1]-center_x, rgb.shape[0]-center_y):
+        return False
+    brightness = []
+    for offset in (-margin, margin):
+        ring_x = np.rint(center_x + (radii+offset)*np.cos(angles)).astype(int)
+        ring_y = np.rint(center_y + (radii+offset)*np.sin(angles)).astype(int)
+        brightness.append(rgb[ring_y, ring_x].mean(axis=-1))
+    inside, outside = brightness
+    contrast = outside-inside
+    darkens = contrast >= np.maximum(9, .13*outside)
+    quadrants = darkens.reshape(-1, 4, 24).mean(axis=-1)
+    return bool(((quadrants.min(axis=1) >= .29) & (quadrants.mean(axis=1) >= .60)).any())
+
+
+def _shorts_playback_glyph(rgb, search_region, span):
+    """Measure the white glyph, using the round backing to verify the overlay."""
+    import cv2
+    import numpy as np
+
+    left, top, right, bottom = search_region
+    mid_x, mid_y = (right-left)/2, (bottom-top)/2
+    search = rgb[top:bottom, left:right]
+    low, high = search.min(axis=-1), search.max(axis=-1)
+    matches = []
+    for threshold in (205, 235):
+        mask = np.uint8((low >= threshold) & (high-low <= 32))*255
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        triangles, bars = [], []
+        for contour in contours:
+            x, y, width, height = cv2.boundingRect(contour)
+            if not max(10, .012*span) <= height <= .055*span:
+                continue
+            fill = (mask[y:y+height, x:x+width] > 0).mean()
+            box = (x, y, x+width, y+height)
+            if .55 <= width/height <= 1.35 and .34 <= fill <= .72 and _horizontal_triangle(contour, (x, y, width, height)):
+                triangles.append(box)
+            if .10 <= width/height <= .36 and fill >= .78:
+                bars.append(box)
+        for cls, boxes in (("play", triangles), ("pause", _pause_pairs(bars))):
+            for x1, y1, x2, y2 in boxes:
+                height = y2-y1
+                if abs((x1+x2)/2-mid_x) > .26*height or abs((y1+y2)/2-mid_y) > .15*height:
+                    continue
+                if cls == "pause" and not .48 <= (x2-x1)/height <= 1.12:
+                    continue
+                glyph = [left+x1, top+y1, left+x2, top+y2]
+                if any(cls == old_cls and _intersection_area(glyph, old) >= .8*(x2-x1)*height for old_cls, old in matches):
+                    continue
+                if _has_shorts_overlay_disc(rgb, left+mid_x, top+mid_y, height):
+                    matches.append((cls, glyph))
+    return matches[0] if len(matches) == 1 else None
+
+
+def localize_shorts_playback(rgb, player_region):
+    """Find the visible glyph in the center of a verified Shorts viewport."""
+    size = (rgb.shape[1], rgb.shape[0])
+    if not valid_box(player_region, size):
+        return None
+    left, top, right, bottom = player_region
+    span = min(right-left, bottom-top)
+    center_x, center_y = round((left+right)/2), round((top+bottom)/2)
+    radius = max(8, round(SHORTS_PLAYBACK_SEARCH_RATIO*span))
+    region = [center_x-radius, center_y-radius, center_x+radius, center_y+radius]
+    if not valid_box(region, size):
+        return None
+    match = _shorts_playback_glyph(rgb, region, span)
+    if not match:
+        return None
+    cls, glyph = match
+    return _visual_annotation(
+        {"class": cls, "source": "studio_shorts_pixels", "visible_evidence": "Visible central Shorts playback overlay"},
+        glyph, region, "pixel_shorts_playback", _padded_icon(glyph, size, []),
+    )
+
+
+def _fullscreen_glyph(rgb, region, cls):
+    """Find the complete mirrored pair of diagonal arrows around the tap center."""
+    import cv2
+    import numpy as np
+
+    left, top, right, bottom = region
+    width, height = right-left, bottom-top
+    size = min(width, height)
+    if size < 16 or max(width, height) > 2*size:
+        return None
+    template = np.zeros((20, 20), np.uint8)
+    for endpoint in ((17, 2), (2, 17), (17, 17)):
+        cv2.line(template, (2, 2), endpoint, 1, 4)
+    template = template.astype(bool)
+    inward = cls == "exit_fullscreen"
+    matches = []
+    for mask in _foreground_masks(rgb[top:bottom, left:right]):
+        corners = {True: [], False: []}
+        for part in _components(mask):
+            start_x, start_y, end_x, end_y = part
+            part_width, part_height = end_x-start_x, end_y-start_y
+            if not .07*size <= part_height <= .42*size or not .72 <= part_width/part_height <= 1.38:
+                continue
+            normalized = cv2.resize(mask[start_y:end_y, start_x:end_x], (20, 20), interpolation=cv2.INTER_AREA) >= 128
+            for northwest in corners:
+                pixels = normalized if northwest else normalized[::-1, ::-1]
+                score = np.count_nonzero(pixels & template)/np.count_nonzero(pixels | template)
+                if score >= .62:
+                    corners[northwest].append((part, score))
+        for first, first_score in corners[not inward]:
+            for second, second_score in corners[inward]:
+                dx = (second[0]+second[2]-first[0]-first[2])/2
+                dy = (second[1]+second[3]-first[1]-first[3])/2
+                arrow_size = ((first[3]-first[1])+(second[3]-second[1]))/2
+                if not .72*arrow_size <= dx <= 1.9*arrow_size or not .7 <= dy/dx <= 1.4:
+                    continue
+                if not .73 <= (second[3]-second[1])/(first[3]-first[1]) <= 1.37:
+                    continue
+                union = _union((first, second))
+                offset_x = abs((union[0]+union[2]-width)/2)/width
+                offset_y = abs((union[1]+union[3]-height)/2)/height
+                if max(offset_x, offset_y) <= .20:
+                    matches.append((min(first_score, second_score)-offset_x-offset_y, union))
+    if not matches:
+        return None
+    best_score, best = max(matches)
+    for score, other in matches:
+        if score >= best_score-.08 and _intersection_area(best, other) < .75*(best[2]-best[0])*(best[3]-best[1]):
+            return None
+    return [left+best[0], top+best[1], left+best[2], top+best[3]]
+
+
+def _toggle_glyphs(rgb, region_height):
+    import numpy as np
+
+    bright = np.uint8((rgb.min(axis=-1) >= 190) & (rgb.max(axis=-1)-rgb.min(axis=-1) <= 45))*255
+    parts = _components(bright)
+    for part in parts:
+        left, top, right, bottom = part
+        knob_width, knob_height = right-left, bottom-top
+        if (.45*region_height <= knob_height <= region_height and .8 <= knob_width/knob_height <= 1.22
+                and np.mean(bright[top:bottom, left:right] > 0) >= .48
+                and _transport_glyph(rgb, part, "play")):
+            yield "on", part
+    for part in _pause_pairs(parts):
+        yield "off", part
+
+
+def _capsule_edge_scores(gray, lefts, tops, width, height):
+    import numpy as np
+
+    radius = height/2
+    angles = np.linspace(-np.pi/2, np.pi/2, 11)[1:-1]
+    cosine, sine = np.cos(angles), np.sin(angles)
+    straight = np.linspace(radius, width-radius, len(angles))
+    zeros, ones = np.zeros_like(straight), np.ones_like(straight)
+    boundary_x = np.stack((straight, straight, radius-cosine*radius, width-radius+cosine*radius))
+    boundary_y = np.stack((zeros, ones*height, radius+sine*radius, radius+sine*radius))
+    normal_x = np.stack((zeros, zeros, -cosine, cosine))
+    normal_y = np.stack((-ones, ones, sine, sine))
+    positions_x, positions_y = np.meshgrid(lefts, tops)
+    xs, ys = positions_x.reshape(-1, 1, 1), positions_y.reshape(-1, 1, 1)
+
+    def contrast(distance):
+        inner = gray[ys+np.floor(boundary_y-distance*normal_y).astype(int),
+                     xs+np.floor(boundary_x-distance*normal_x).astype(int)]
+        outer = gray[ys+np.floor(boundary_y+distance*normal_y).astype(int),
+                     xs+np.floor(boundary_x+distance*normal_x).astype(int)]
+        return inner-outer
+
+    far = contrast(2)
+    support = np.mean(far >= 16, axis=2)
+    good = np.flatnonzero((support.min(axis=1) >= .55) & (support.mean(axis=1) >= .72))
+    if good.size:
+        near = contrast(.9)[good]
+        scores = np.clip(near, -40, 64).mean(axis=(1, 2)) + .5*np.clip(far[good], -40, 64).mean(axis=(1, 2))
+        for index, score in zip(good, scores):
+            yield float(score), int(xs[index, 0, 0]), int(ys[index, 0, 0])
+
+
+def _autoplay_toggle(rgb, region):
+    """Trace both arcs and horizontal edges around a verified toggle glyph."""
+    import cv2
+    import numpy as np
+
+    left, top, right, bottom = region
+    width, height = right-left, bottom-top
+    if height < 12 or not .95 <= width/height <= 3:
+        return None
+    margin = max(3, round(.30*height))
+    origin_x, origin_y = max(0, left-margin), max(0, top-margin)
+    crop = rgb[origin_y:bottom+margin, origin_x:right+margin]
+    gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY).astype(np.int16)
+    center_x, center_y = (left+right)/2-origin_x, (top+bottom)/2-origin_y
+    matches = []
+    for state, glyph in _toggle_glyphs(crop, height):
+        gx, gy = (glyph[0]+glyph[2])/2, (glyph[1]+glyph[3])/2
+        glyph_width, glyph_height = glyph[2]-glyph[0], glyph[3]-glyph[1]
+        low, high = (.66, .97) if state == "on" else (.27, .59)
+        min_height = max(12, math.ceil(.53*height), math.ceil(glyph_height/high))
+        max_height = min(math.floor(1.18*height), math.floor(glyph_height/low))
+        for ph in range(min_height, max_height+1):
+            if state == "off" and not .18*ph <= glyph_width <= .50*ph:
+                continue
+            radius = ph/2
+            offset = max(2, round(.06*ph))
+            origin = round(gy-radius)
+            tops = np.arange(max(2, origin-offset), min(gray.shape[0]-ph-3, origin+offset)+1)
+            tops = tops[np.abs(tops+radius-center_y) <= .24*height]
+            min_width = math.ceil(max(.68*width, 1.42*ph))
+            max_width = math.floor(min(1.38*width, 2.35*ph))
+            for pw in range(min_width, max_width+1):
+                origin = round(gx-pw+radius if state == "on" else gx-radius)
+                lefts = np.arange(max(2, origin-offset), min(gray.shape[1]-pw-3, origin+offset)+1)
+                lefts = lefts[np.abs(lefts+pw/2-center_x) <= .24*width]
+                if lefts.size and tops.size:
+                    for score, px, py in _capsule_edge_scores(gray, lefts, tops, pw, ph):
+                        matches.append((score, [origin_x+px, origin_y+py, origin_x+px+pw, origin_y+py+ph], state))
+    if not matches:
+        return None
+    best, box, state = max(matches)
+    if any(score >= best-6 and (other_state != state or _intersection_area(box, other) < .75*(box[2]-box[0])*(box[3]-box[1]))
+           for score, other, other_state in matches):
+        return None
+    return box, state
+
+
+def _button_background(rgb, region, label_box, *, ad_button=False):
     import cv2
     import numpy as np
 
     left, top, right, bottom = region
     rw, rh = right-left, bottom-top
-    if not 1.3 <= rw/rh <= 10 or rh < 10:
+    if not 1.3 <= rw/rh <= (16 if ad_button else 10) or rh < 10:
         return None
     margin = max(3, round(rh*.13))
     ox, oy = max(0, left-margin), max(0, top-margin)
@@ -281,7 +533,8 @@ def _subscribe_button(rgb, region, label_box):
     gray = cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
     matches = []
     for bright in (True, False):
-        for level in (40, 80, 120, 160, 200, 232):
+        levels = (40, 80, 120, 160, 200, 232, 244, 250) if ad_button else (40, 80, 120, 160, 200, 232)
+        for level in levels:
             mask = np.uint8(gray >= level if bright else gray <= level)
             contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             for contour in contours:
@@ -299,8 +552,11 @@ def _subscribe_button(rgb, region, label_box):
                 # The button interior must have a field of contrasting label strokes.
                 field = gray[y+h//5:y+h-h//5, x+w//6:x+w-w//6].astype(np.float32)
                 tone = np.median(field)
-                label = np.uint8((tone-field if bright else field-tone) >= 25)
+                contrast = tone-field if bright else field-tone
+                label = np.uint8(contrast >= 25)
                 rows = _text_rows(_components(label))
+                if ad_button and not rows:
+                    rows = _text_rows(_components(np.uint8(-contrast >= 25)))
                 if rows or (label_box and .02 < np.mean(label) < .48):
                     matches.append(button)
     if not matches:
@@ -309,6 +565,115 @@ def _subscribe_button(rgb, region, label_box):
     if any(_intersection_area(box, outer) < .75*(outer[2]-outer[0])*(outer[3]-outer[1]) for box in matches):
         return None
     return outer
+
+
+def _text_button_label(rgb, region):
+    left, top, right, bottom = region
+    width, height = right-left, bottom-top
+    if not 2 <= width/height <= 18:
+        return None
+    rows = [row for mask in _foreground_masks(rgb[top:bottom, left:right])
+            for row in _text_rows(_components(mask))
+            if row[2]-row[0] >= .48*width and abs((row[1]+row[3]-height)/2) <= .22*height]
+    if not rows:
+        return None
+    label = max(rows, key=lambda row: row[2]-row[0])
+    bounds = _union([row for row in rows if _intersection_area(label, row) >= .70*(label[2]-label[0])*(label[3]-label[1])])
+    return [left+bounds[0], top+bounds[1], left+bounds[2], top+bounds[3]]
+
+
+def _small_symbol(rgb, region, cls):
+    import cv2
+    import numpy as np
+
+    left, top, right, bottom = region
+    width, height = right-left, bottom-top
+    if min(width, height) < 12 or max(width, height) > 2*min(width, height):
+        return None
+    template = np.zeros((28, 28), np.uint8)
+    if cls == "back":
+        cv2.polylines(template, [np.array([(25, 2), (2, 14), (25, 25)])], False, 1, 4)
+        aspect, min_size = (.40, .86), .23
+    elif cls == "hide_content":
+        cv2.line(template, (2, 2), (25, 25), 1, 4)
+        cv2.line(template, (2, 25), (25, 2), 1, 4)
+        aspect, min_size = (.78, 1.28), .24
+    else:
+        cv2.circle(template, (14, 14), 12, 1, 3)
+        cv2.circle(template, (14, 8), 2, 1, cv2.FILLED)
+        cv2.line(template, (14, 12), (14, 20), 1, 2)
+        aspect, min_size = (.85, 1.18), .13
+    template = template.astype(bool)
+    matches = []
+    for mask in _foreground_masks(rgb[top:bottom, left:right]):
+        for x1, y1, x2, y2 in _components(mask):
+            pw, ph = x2-x1, y2-y1
+            offset = max(abs((x1+x2-width)/2)/width, abs((y1+y2-height)/2)/height)
+            if not aspect[0] <= pw/ph <= aspect[1] or not min_size*height <= ph <= .90*height or offset > .25:
+                continue
+            shape = cv2.resize(mask[y1:y2, x1:x2], (28, 28), interpolation=cv2.INTER_AREA) >= 128
+            if cls == "ad_info":
+                dot = shape[5:11, 10:18].mean()
+                stem = shape[13:20, 10:18].mean()
+                gap = shape[11:13, 11:17].mean()
+                if not (.04 <= dot <= .55 and .14 <= stem <= .65 and gap < .45):
+                    continue
+            score = np.count_nonzero(shape & template)/np.count_nonzero(shape | template)
+            if score >= (.49 if cls == "ad_info" else .56):
+                matches.append((score-offset, [left+x1, top+y1, left+x2, top+y2]))
+    if not matches:
+        return None
+    best_score, best = max(matches)
+    if any(score >= best_score-.08 and _intersection_area(best, other) < .72*(best[2]-best[0])*(best[3]-best[1])
+           for score, other in matches):
+        return None
+    return best
+
+
+def localize_shorts_speaker(rgb, region):
+    """Identify the speaker and its waves or mute mark in a Shorts toolbar slot."""
+    import cv2
+
+    left, top, right, bottom = region
+    width, height = right-left, bottom-top
+    mask = next(_foreground_masks(rgb[top:bottom, left:right]))
+    contours, hierarchy = cv2.findContours(mask, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None:
+        return None
+    shapes = _components(mask)
+    matches = []
+    for contour, (_, _, hole, parent) in zip(contours, hierarchy[0]):
+        if parent >= 0 or hole < 0:
+            continue
+        x, y, w, h = cv2.boundingRect(contour)
+        if (not .34*height <= h <= .84*height or not .42 <= w/h <= .82
+                or abs(x+w-width/2) > .20*h or abs(y+h/2-height/2) > .18*h):
+            continue
+        if not .36 <= cv2.contourArea(contours[hole])/max(1, cv2.contourArea(contour)) <= .80:
+            continue
+        body = mask[y:y+h, x:x+w]
+        edge_width = max(1, round(.2*w))
+        if body[:, :edge_width].any(axis=1).mean() >= .78 or body[:, -edge_width:].any(axis=1).mean() < .82:
+            continue
+        marks = sorted(box for box in shapes if 0 <= box[0]-x-w <= .38*h
+                       and box[2]-x-w <= .74*h and .30*h <= box[3]-box[1] <= .95*h
+                       and abs((box[1]+box[3])/2-y-h/2) <= .14*h)
+        if len(marks) == 1 and _small_symbol(rgb, [left+x+w, top+y, right, top+y+h], "hide_content"):
+            cls = "volume_muted"
+        elif (len(marks) == 2 and marks[1][2] > marks[0][2]
+              and marks[1][3]-marks[1][1] >= 1.22*(marks[0][3]-marks[0][1])
+              and all(.18 <= (b[2]-b[0])/(b[3]-b[1]) <= .58 for b in marks)):
+            cls = "volume_on"
+        else:
+            continue
+        l, t, r, b = _union([(x, y, x+w, y+h), *marks])
+        matches.append((cls, [left+l, top+t, left+r, top+b]))
+    if len(matches) != 1:
+        return None
+    cls, glyph = matches[0]
+    evidence = "Visible speaker with sound waves" if cls == "volume_on" else "Visible speaker with mute X"
+    return _visual_annotation({"class": cls, "source": "studio_shorts_toolbar", "visible_evidence": evidence},
+                              glyph, region, "pixel_shorts_toolbar", _padded_icon(glyph, (rgb.shape[1], rgb.shape[0]), []))
 
 
 def track_box(track, height):
@@ -324,10 +689,65 @@ def inside_track(marker, track):
     return track[0] <= cx <= track[2] and track[1] <= cy <= track[3]
 
 
-def localize_timeline(rgb, annotation):
+def _gold_pixels(image):
+    red, green, blue = (image[..., channel] for channel in range(3))
+    return (red >= 160) & (green >= 115) & (green >= .58*red) & (red >= .90*green) & (green-blue >= 65)
+
+
+def _has_left_color_run(mask, minimum_fraction):
+    import numpy as np
+
+    transitions = np.flatnonzero(np.diff(np.r_[False, mask, False]))
+    return any(start <= .04*mask.size and stop-start >= max(6, minimum_fraction*mask.size)
+               for start, stop in zip(transitions[::2], transitions[1::2]))
+
+
+def _embedded_seek_stripe(pixels, slider_region, player, ad_track=False):
+    """Follow a real played/unplayed line across a translucent player/page seam."""
+    import numpy as np
+
+    height, width = pixels.shape[:2]
+    if not valid_box(player, (width, height)):
+        return None
+    left, top, right, bottom = slider_region
+    edge = round(player[3])
+    band = max(3, min(12, round(.08*(bottom-top))))
+    if height-edge <= max(12, .035*height) or abs(bottom-edge) > band:
+        return None
+    left, right = max(left, math.ceil(player[0])), min(right, math.floor(player[2]))
+    span = right-left
+    if span < .75*(slider_region[2]-slider_region[0]):
+        return None
+    max_thickness = max(3, min(12, round(.008*span)))
+    scan_top = max(1, top, edge-band-max_thickness)
+    scan_bottom = min(height-1, bottom+band, edge+band)
+    crop = pixels[scan_top-1:scan_bottom+1, left:right]
+    played = (_gold_pixels(crop) if ad_track else
+              (crop[..., 0] >= 165) & (crop[..., 0]-crop[..., 1:].max(axis=-1) >= 75) & (crop[..., 1] <= 105))
+    matches = []
+    for end in range(max(edge-band, scan_top+2), scan_bottom+1):
+        after = end-scan_top+1
+        for start in range(max(scan_top, end-max_thickness), end-1):
+            first = start-scan_top+1
+            anchor = played[first:after].all(axis=0) & ~played[first-1] & ~played[after]
+            if not _has_left_color_run(anchor, .01 if ad_track else .025):
+                continue
+            middle = (first+after-1)//2
+            row = crop[middle]
+            neutral = (row.max(axis=1)-row.min(axis=1) <= 70) & (row.max(axis=1) >= 52)
+            upper = np.max(np.abs(crop[first]-crop[first-1]), axis=1) >= 14
+            lower = np.max(np.abs(row-crop[after]), axis=1) >= 24
+            columns = np.flatnonzero((played[middle] | neutral) & upper & lower)
+            if len(columns) >= .65*span and columns[-1]-columns[0]+1 >= .80*span:
+                matches.append([left+int(columns[0]), start, left+int(columns[-1])+1, end])
+    return matches[0] if len(matches) == 1 else None
+
+
+def localize_timeline(rgb, annotation, player_region=None):
     """Find an observed seek stripe and optional protruding thumb in an AX region.
 
-    The slider value, playback time and screen layout never supply geometry.
+    A verified embedded player frame can limit the search to its lower edge,
+    but the slider value and playback time never supply geometry.
     A thumb can extend outside the AX hit region, so inspect its attached caps
     in the original image after independently finding the thin track.
     """
@@ -339,6 +759,9 @@ def localize_timeline(rgb, annotation):
     if region is None:
         return [], "Invalid slider region"
     left, top, right, bottom = region
+    ad_track = annotation.get("class") == "ad_progress_bar"
+    if ad_track:
+        top = max(top, bottom-max(12, round(.05*(right-left))))
     rw, rh = right-left, bottom-top
     if rw < 5*rh or rw < 40 or rh < 3:
         return [], "Slider region is not a horizontal seek control"
@@ -357,7 +780,10 @@ def localize_timeline(rgb, annotation):
     for y in range(max(1, top), min(bottom, height-1)):
         row = pixels[y, left:right]
         red, neutral = colors(row)
-        start = (red | neutral) & (np.max(np.abs(row-pixels[y-1, left:right]), axis=1) >= 20)
+        played = _gold_pixels(row) if ad_track else red
+        start = (played | neutral) & (np.max(np.abs(row-pixels[y-1, left:right]), axis=1) >= 20)
+        if ad_track and not _has_left_color_run(played & start, .01):
+            continue
         if np.count_nonzero(start) < .70*rw:
             continue
         stable = start.copy()
@@ -372,11 +798,11 @@ def localize_timeline(rgb, annotation):
     for score, stripe in sorted(stripes, key=lambda item: item[0], reverse=True):
         if not any(_intersection_area(stripe, old) > 0 for _, old in unique):
             unique.append((score, stripe))
-    if not unique:
-        return [], "No thin seek track with visible upper and lower boundaries"
     if len(unique) > 1:
         return [], "Multiple horizontal stripes in the slider region; review manually"
-    _, track = unique[0]
+    track = unique[0][1] if unique else _embedded_seek_stripe(pixels, region, player_region, ad_track)
+    if track is None:
+        return [], "No thin seek track with visible upper and lower boundaries"
     # The rounded endpoints get shorter vertically, so they may not appear in
     # the full-height boundary mask. Follow the visible stroke at its center.
     middle = pixels[(track[1]+track[3]-1)//2, left:right]
@@ -390,17 +816,24 @@ def localize_timeline(rgb, annotation):
             track[edge] += step
 
     def candidate(cls, content, evidence):
-        box = track_box(content, height) if cls == "progress_bar" else content
+        box = track_box(content, height) if cls in TRACK_CLASSES else content
         result = _visual_annotation(annotation, content, region, "pixel_timeline", box)
         result.update({"class": cls, "geometry_policy": geometry_policy(cls),
                        "source": "studio_timeline_pixels", "visible_evidence": evidence})
         return result
 
-    result = [candidate("progress_bar", track, "Observed thin red/neutral seek track with two visible boundaries")]
+    if ad_track:
+        return [candidate("ad_progress_bar", track, "Observed gold and neutral ad progress stripe")], "Pixel-localized ad progress track"
+    evidence = ("Observed thin red/neutral seek track with two visible boundaries" if unique else
+                "Observed played/unplayed stripe at the embedded player edge")
+    result = [candidate("progress_bar", track, evidence)]
     radius = max(8, min(64, round(rh*.8)))
     scan_top, scan_bottom = max(0, track[1]-radius), min(height, track[3]+radius)
     scan = pixels[scan_top:scan_bottom, track[0]:track[2]]
     red, neutral = colors(scan)
+    if not unique:
+        stripe_row = scan[(track[1]+track[3]-1)//2-scan_top]
+        red &= np.max(np.abs(scan-stripe_row), axis=-1) <= 65
     white = neutral & (scan.min(axis=-1) >= 180)
     markers = []
     for mask in (red, white):
@@ -459,12 +892,43 @@ def localize_control(rgb, annotation, *, exclusions=()):
     size = (width, height)
     cls = annotation.get("class")
     policy = geometry_policy(cls)
-    region = _control_region(annotation, size)
+    region = _control_region(annotation, size, prefer_localization=cls in {"visit_advertiser", "ad_cta"})
     explicit = annotation.get("visual_xyxy")
     if "visual_xyxy" in annotation and not valid_box(explicit, size):
         return None, "Invalid explicit visual geometry"
     if explicit:
         explicit = list(map(float, explicit))
+    if cls == "autoplay":
+        toggle = _autoplay_toggle(rgb, region) if region else None
+        if toggle:
+            box, state = toggle
+            result = _visual_annotation(annotation, box, region, "pixel_autoplay_toggle")
+            result.update(autoplay_state=state, visible_evidence=f"Visible Autoplay capsule with {state} glyph")
+            return result, f"Visible Autoplay toggle ({state})"
+        return None, "No verified Autoplay toggle and state glyph in this region"
+    if cls in FULLSCREEN_GLYPHS and region:
+        matches = [(kind, glyph) for kind in sorted(FULLSCREEN_GLYPHS)
+                   if (glyph := _fullscreen_glyph(rgb, region, kind))]
+        if len(matches) == 1:
+            kind, glyph = matches[0]
+            visual = _visual_annotation({**annotation, "class": kind}, glyph, region, "pixel_fullscreen_arrows",
+                                        _padded_icon(glyph, size, exclusions))
+            visual["visible_evidence"] = "Visible pair of inward arrows" if kind == "exit_fullscreen" else "Visible pair of outward arrows"
+            return visual, "Verified the direction of the two fullscreen arrows"
+        if annotation.get("source") in INTERACTION_SOURCES or annotation.get("interaction_xyxy"):
+            return None, "No unambiguous pair of fullscreen arrows in the control region"
+    if (cls == "pause" and annotation.get("geometry_source") == "pixel_shorts_playback"
+            and valid_box(annotation.get("localization_region_xyxy"), size)):
+        # Older Shorts proposals measured the disc. Recheck the saved search area
+        # so automatic recovery and explicit refinement can both correct them.
+        search_region = _control_region(annotation, size, prefer_localization=True)
+        left, top, right, bottom = search_region
+        span = min(right-left, bottom-top)/(2*SHORTS_PLAYBACK_SEARCH_RATIO)
+        match = _shorts_playback_glyph(rgb, search_region, span)
+        if match and match[0] == cls:
+            glyph = match[1]
+            visual = _visual_annotation(annotation, glyph, search_region, "pixel_shorts_playback", _padded_icon(glyph, size, exclusions))
+            return visual, "Verified both visible pause bars"
     if explicit and annotation.get("geometry_policy_version") == POLICY_VERSION and annotation.get("geometry_policy") == policy:
         return project_visual_geometry(annotation), "Current annotation geometry"
     if policy == "visible_track":
@@ -478,10 +942,30 @@ def localize_control(rgb, annotation, *, exclusions=()):
     if policy == "visible_button":
         source = annotation.get("geometry_source") or ""
         label = explicit if "ocr" in source else None
-        button = _subscribe_button(rgb, region, label) if region else None
+        button = _button_background(rgb, region, label, ad_button=cls == "ad_cta") if region else None
         if button:
-            return _visual_annotation(annotation, button, region, "pixel_button_background"), "Visible Subscribe button and label"
-        return None, "Outline the full Subscribe button; its background was ambiguous"
+            return _visual_annotation(annotation, button, region, "pixel_button_background"), "Visible button background and label"
+        return None, f"The full {cls} button background could not be verified"
+    if policy == "text_button":
+        label = _text_button_label(rgb, region) if region else None
+        if label:
+            tap = _control_region(annotation, size)
+            button = _button_background(rgb, tap, label, ad_button=True) if tap != region else None
+            return _visual_annotation(annotation, button or label, region, "pixel_action_text"), "Visible Visit advertiser action"
+        return None, "Could not verify the Visit advertiser text"
+    if cls in {"ad_info", "back", "hide_content"} and region:
+        glyph = _small_symbol(rgb, region, cls)
+        if glyph is None and cls == "hide_content":
+            # The ad panel can render its close button at the other end of the header.
+            alternate = _control_region(annotation, size, prefer_localization=True)
+            if alternate and alternate != region:
+                glyph = _small_symbol(rgb, alternate, cls)
+                if glyph:
+                    region = alternate
+        if glyph:
+            return _visual_annotation(annotation, glyph, region, "pixel_control_symbol",
+                                      _padded_icon(glyph, size, exclusions)), f"Verified the {cls} glyph"
+        return None, f"No distinct {cls} glyph in the control region"
     if cls in TRANSPORT_GLYPHS and region:
         glyph = _transport_glyph(rgb, region, cls)
         if glyph:
@@ -518,10 +1002,10 @@ def localize_control(rgb, annotation, *, exclusions=()):
         components = _components(mask)
         nearby_parts.update(components)
         rows = _text_rows(components)
-        if cls != "more_options":
+        if cls not in ELLIPSIS_GLYPHS:
             nearby_text.update(tuple(row) for row in rows)
-        if cls == "more_options":
-            groups = _dots(components)
+        if cls in ELLIPSIS_GLYPHS:
+            groups = _dots(components, mask, annotation.get("ellipsis_orientation"))
         elif cls == "pause":
             groups = _pause_pairs(components)
         else:
@@ -548,7 +1032,7 @@ def localize_control(rgb, annotation, *, exclusions=()):
                 groups.extend(clusters)
             # Speaker waves and similar pieces may be disconnected. Join only
             # neighbors aligned with the glyph; a lower text row stays separate.
-            if cls in {"volume_on", "volume_muted", "cast", "fullscreen", "exit_fullscreen"}:
+            if cls in {"volume_on", "volume_muted", "cast"}:
                 fragments = []
                 for item in groups:
                     ih = item[3]-item[1]
@@ -560,7 +1044,7 @@ def localize_control(rgb, annotation, *, exclusions=()):
                 groups.extend(fragments)
         for item in groups:
             iw, ih = item[2]-item[0], item[3]-item[1]
-            if cls != "more_options":
+            if cls not in ELLIPSIS_GLYPHS:
                 if min(iw, ih) < max(6, .12*min(rw, rh)) or not .35 <= iw/max(ih, 1) <= 2.5:
                     continue
                 # Reject both individual letters and merged text words.
@@ -612,18 +1096,21 @@ def geometry_proposals(rgb, annotations, *, preserve_reviewed=False):
         if preserve_reviewed and annotation.get("geometry_reviewed"):
             continue
         policy = geometry_policy(annotation.get("class"))
-        if policy not in {"icon_only", "visible_track", "visible_button"} and not (
+        if policy not in {"icon_only", "visible_track", "visible_button", "visible_toggle", "text_button"} and not (
                 policy == "artwork" and annotation.get("visual_xyxy")):
             continue
         localized, reason = localize_control(rgb, annotation, exclusions=visible_neighbors(annotations, annotation, size))
-        diagnostic = {"annotation_index": index, "class": annotation.get("class"), "reason": reason}
-        if localized is None and (policy == "visible_button" or annotation.get("class") in TRANSPORT_GLYPHS):
+        diagnostic = {"annotation_index": index, "class": localized["class"] if localized else annotation.get("class"),
+                      "reason": reason}
+        if localized is None and (policy in {"visible_button", "visible_toggle", "text_button"}
+                                  or annotation.get("class") in TRANSPORT_GLYPHS | FULLSCREEN_GLYPHS):
             diagnostic["manual_geometry"] = {"class": annotation["class"], "xyxy": annotation["xyxy"]}
         diagnostics.append(diagnostic)
         if localized is None:
             continue
         original = annotation["xyxy"]
-        if max(abs(a-b) for a, b in zip(original, localized["xyxy"])) <= 1:
+        if (localized["class"] == annotation["class"] and max(abs(a-b) for a, b in zip(original, localized["xyxy"])) <= 1
+                and localized.get("autoplay_state") == annotation.get("autoplay_state")):
             continue
         localized.update(action="replace_geometry", replaces={"class": annotation["class"], "xyxy": deepcopy(original)},
                          source="studio_icon_geometry", descriptor=reason)

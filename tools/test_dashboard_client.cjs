@@ -57,6 +57,16 @@ async function main() {
     assert.equal(e.run("currentAnnotations.length"), 1);
     assert.match(e.element("annotation-quality-message").textContent, /1 duplicate/);
   });
+  await check("autoplay shows both states without changing the annotation class", () => {
+    for (const state of ["on", "off"]) {
+      const e = editor();
+      e.run(`currentProposals = [{class:"autoplay",xyxy:[55,5,81,25],autoplay_state:${JSON.stringify(state)}}]; renderSuggestions();`);
+      assert.ok(e.element("suggestion-list").innerHTML.includes(`autoplay (${state})`));
+      e.run("reviewSuggestion(0,true)");
+      assert.ok(e.element("annotation-list").innerHTML.includes(`autoplay (${state})`));
+      assert.equal(e.run("currentAnnotations.at(-1).class"), "autoplay");
+    }
+  });
   await check("drawing ignores duplicate boxes and resets approved status", () => {
     const e = editor();
     e.element("curation-status-select").value = "approved";
@@ -134,6 +144,29 @@ async function main() {
     await new Promise(setImmediate);
     assert.equal(e.run("currentProposals.map(p=>p.class).join(',')"), "share");
     assert.equal(e.run("proposalDecisions.map(p=>p.decision).join(',')"), "rejected,pending");
+  });
+  await check("ad recovery removes the stale fullscreen label and keeps the player and ad menus separate", async () => {
+    const e = editor();
+    e.run(`allRecords[0].display_annotations = [
+      {class:"fullscreen",xyxy:[65,105,91,135],review_required:true},
+      {class:"exit_fullscreen",xyxy:[65,105,91,135],review_required:true},
+      {class:"more_options",xyxy:[22,110,26,124],review_required:true}
+    ]; allRecords[0].has_accessibility_snapshot = true;`);
+    e.context.fetch = async () => ({ok:true,json:async()=>({
+      proposals: [
+        {class:"exit_fullscreen",xyxy:[68,111,88,129],proposal_id:"exit",action:"replace_geometry",replaces:{class:"exit_fullscreen",xyxy:[65,105,91,135]}},
+        {class:"more_options",xyxy:[83,6,89,24],proposal_id:"player-menu"},
+        {class:"ad_more_options",xyxy:[20,108,28,126],proposal_id:"ad-menu"},
+      ],
+      superseded_proposals: [{class:"fullscreen",xyxy:[65,105,91,135]},{class:"more_options",xyxy:[22,110,26,124]}],
+      warnings:[]
+    })});
+    e.run('openEditor("sample");');
+    await new Promise(setImmediate);
+    assert.equal(e.run("currentProposals.map(p=>p.class).join(',')"), "exit_fullscreen,more_options,ad_more_options");
+    assert.equal(e.run("proposalDecisions.filter(p=>p.decision==='superseded').length"), 3);
+    e.run("reviewSuggestion(0,true)");
+    assert.equal(e.run("currentAnnotations.map(a=>a.class).join(',')"), "exit_fullscreen");
   });
   await check("automatic correction replaces an outdated pending box and Zoom isolates the new one", async () => {
     const e = editor();

@@ -66,12 +66,33 @@ The class picker uses the source annotation vocabulary independently of any
 trained model. It does not imply those controls are visible or detected. Do not
 add a playhead, pause button or skip-ad button when it is absent from the image.
 
-The recovery pass localizes mute/search glyphs inside their actual accessibility
-regions. For sliders, it requires a thin pixel stripe with visible boundaries
-above and below, accepting red plus gray/white segments together. It derives a
-playhead only from a visible round thumb attached on both sides of that stripe,
-including the part outside the accessibility hit region. Playback percentage or
-timestamps never supply a thumb position. Ambiguous tracks remain for review.
+The recovery pass localizes glyphs inside their accessibility regions. It checks
+both diagonal fullscreen arrows instead of sizing the box from a single bright
+patch. Autoplay uses the same `autoplay` class for both states. The full visible
+toggle is boxed and the review list displays the observed on/off state.
+
+For sliders, recovery requires a thin pixel stripe with visible boundaries
+above and below, accepting red plus gray/white segments together. For an embedded
+YouTube player, it can also trace the translucent track where the player meets the
+page below. This uses the observed player viewport rather than the capture's
+folder label. It derives a playhead only from a visible round thumb attached on
+both sides of the stripe, including the part outside the accessibility hit
+region. Playback percentage and timestamps never supply a thumb position.
+Ambiguous tracks remain for review.
+
+YouTube ad captures distinguish the player menu (`more_options`) from the
+sponsored card or panel menu (`ad_more_options`). Ad actions use
+`visit_advertiser`, `ad_cta`, `ad_info`, and `hide_content` alongside
+`like` and `share` when those controls are visible. `ad_progress_bar`
+frames the yellow ad track. The two fullscreen labels are resolved from the
+arrows on the visible button. The recovery pass also checks the video action
+row for the three-dot menu near Save and the Shorts toolbar for the back arrow.
+In the Shorts toolbar, the visible Search icon anchors the speaker and
+three-dot menu checks. The speaker's waves or mute X determine its state.
+If the Shorts player shows its center playback overlay, the visible triangle
+or paired bars determine whether it gets a `play` or `pause` box.
+The Shorts `pause` box surrounds both visible bars with about 18% padding
+per side, matching full-video Pause. The circle helps verify the overlay.
 Raw iPad records and curated annotations are unchanged by automatic detection;
 its candidates and diagnostics are saved under `curation/detections/`.
 
@@ -107,7 +128,7 @@ The visible annotation box uses a separate class-specific policy:
 | Skip Ad | `text_and_icon`: its text and adjacent skip glyph together; availability rules retained |
 | Progress bar / playhead | `visible_track` keeps full track width and centers a box at least about 1.35% of the original image height on it. `visible_marker` covers the separate visible thumb with its center inside the track box. |
 | Sound / channel | `artwork`: corresponding thumbnail/artwork |
-| Autoplay | `visible_toggle`: actual toggle |
+| Autoplay | `visible_toggle`: the full capsule with `autoplay_state` set to `on` or `off` when verified from pixels |
 | Time display / more videos | `text_readout` / `composite_control`: explicit class targets |
 
 Apple documents accessibility frames as the element's screen rectangle, and
@@ -183,13 +204,15 @@ a preview; this change does not add live video detection or tracking.
 
 ## Native iPad handover
 
-The current native source is
-`Sony Vai New handover/MediaCollector-source/MediaCollector/MediaCollector.xcodeproj`.
-The accompanying USB kit includes signed companion and runner bundles. Both apps
-are installed on the connected iPad; seven existing captures inspected on
-2026-11-19 contain the new full accessibility sidecars. No reinstall was needed.
-The older `tools/ios/CaptureAccessibilitySnapshot.swift` is an integration
-reference; it is not the authoritative implementation in this handover.
+The developer handover supplies `MediaCollector.xcodeproj` and the signed USB
+kit. The [Capture Runner patch](../ios/CaptureRunnerHittability.patch) records
+the source changes the developer tested on a landscape ad with its advertiser
+panel open. It preserves the capture when XCTest cannot find a valid tap point
+for an element. To apply it to the original handover, run `git apply` with the
+patch path from the `MediaCollector/` folder that contains `Capture.swift`.
+The updated source archive already contains the patch. The
+`tools/ios/CaptureAccessibilitySnapshot.swift` example remains an integration
+reference.
 
 The native runner records enumerated elements, including unmatched/non-hittable
 ones, and the complete available XCTest debug tree. Its handoff publishes the

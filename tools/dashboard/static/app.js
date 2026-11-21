@@ -9,7 +9,7 @@ let selectedAnnotation = null;
 let editorDirty = false;
 let suggestionRequest = 0;
 let annotationClasses = [];
-let geometryPolicies = {subscribe: "visible_button", skip_ad: "text_and_icon", progress_bar: "visible_track", playhead: "visible_marker", sound: "artwork", channel: "artwork", autoplay: "visible_toggle", time_display: "text_readout", more_videos: "composite_control"};
+let geometryPolicies = {subscribe: "visible_button", skip_ad: "text_and_icon", progress_bar: "visible_track", ad_progress_bar: "visible_track", playhead: "visible_marker", sound: "artwork", channel: "artwork", autoplay: "visible_toggle", time_display: "text_readout", more_videos: "composite_control", ad_cta: "visible_button", visit_advertiser: "text_button"};
 
 // Streaming state
 let isStreaming = false;
@@ -25,6 +25,7 @@ let autoSessionCount = 0;
 const CLASS_COLORS = {
   skip_ad: "#ec4899",
   progress_bar: "#f97316",
+  ad_progress_bar: "#facc15",
   playhead: "#eab308",
   play: "#10b981",
   pause: "#f59e0b",
@@ -46,6 +47,8 @@ const CLASS_COLORS = {
   more_videos: "#a78bfa", show_cards: "#818cf8", ask: "#f472b6",
   minimize_player: "#a78bfa", cast: "#38bdf8", hide_controls: "#facc15",
   subscribe: "#f472b6", channel: "#38bdf8", download: "#818cf8", report_problem: "#fb7185",
+  back: "#14532d", hide_content: "#fb7185", visit_advertiser: "#a855f7",
+  ad_info: "#4ade80", ad_more_options: "#d946ef", ad_cta: "#22d3ee",
 };
 
 // Canvas drawing state
@@ -129,7 +132,7 @@ function loadEditorAnnotations(record) {
 }
 
 function reviewedGeometry(annotation, box, cls) {
-  if (cls === "progress_bar" && canvas?.height) {
+  if (visualPolicy(cls) === "visible_track" && canvas?.height) {
     const center = (box[1]+box[3])/2;
     const halfHeight = Math.max((box[3]-box[1])/2, Math.round(canvas.height*0.0135)/2);
     const boundedHeight = Math.min(halfHeight, center, canvas.height-center);
@@ -141,6 +144,7 @@ function reviewedGeometry(annotation, box, cls) {
   delete result.canonical_xyxy;
   delete result.visible_content_xyxy;
   delete result.geometry_policy_version;
+  if (cls !== "autoplay" || cls !== annotation.class) delete result.autoplay_state;
   return result;
 }
 
@@ -664,7 +668,7 @@ function redrawCanvas() {
   const drawBox = (ann, index, pending = false) => {
     if (inspectedBox && !matchingBox(inspectedBox, ann)) return;
     const [x1, y1, x2, y2] = ann.xyxy;
-    const color = CLASS_COLORS[ann.class] || "#ffffff";
+    const color = CLASS_COLORS[ann.class] || "#475569";
 
     if (!pending && ann.interaction_xyxy && document.getElementById("show-interaction-boxes").checked) {
       const [tx1, ty1, tx2, ty2] = ann.interaction_xyxy;
@@ -773,7 +777,7 @@ function onMouseUp(e) {
 
   const selectedClass = document.getElementById("draw-class-select").value;
   // A thin hand-drawn track can be expanded around its measured center.
-  if (x2-x1 > 3 && y2-y1 >= (selectedClass === "progress_bar" ? 1 : 4)) {
+  if (x2-x1 > 3 && y2-y1 >= (visualPolicy(selectedClass) === "visible_track" ? 1 : 4)) {
     let annotation = {
       class: selectedClass,
       xyxy: [x1, y1, x2, y2],
@@ -800,6 +804,10 @@ function onMouseUp(e) {
   redrawCanvas();
 }
 
+function annotationLabel(ann) {
+  return ann.class === "autoplay" && ["on", "off"].includes(ann.autoplay_state) ? `autoplay (${ann.autoplay_state})` : ann.class;
+}
+
 function renderAnnotationList() {
   const list = document.getElementById("annotation-list");
   document.getElementById("box-count").textContent = currentAnnotations.length;
@@ -811,7 +819,7 @@ function renderAnnotationList() {
       return `
       <div class="ann-item ${selectedAnnotation === idx ? "selected" : ""}" style="border-left-color: ${color}">
         <div class="ann-details">
-          <span class="ann-item-cls">${escapeHtml(ann.class)}</span>
+          <span class="ann-item-cls">${escapeHtml(annotationLabel(ann))}</span>
           <div class="ann-item-coords">[${x1}, ${y1}, ${x2}, ${y2}]</div>
           <div class="ann-source">${escapeHtml(ann.source || "source unknown")}</div>
           <div class="ann-source">${escapeHtml(ann.geometry_policy || visualPolicy(ann.class))}${ann.interaction_xyxy ? " · tap region preserved" : ""}</div>
@@ -900,12 +908,16 @@ async function requestAnnotationSuggestions(kind) {
     if (activeRecord !== rec || request !== suggestionRequest) return;
     // Read the live state after the response: the user may have accepted a
     // native candidate while this request was running.
-    let retained = currentProposals.filter(retainPending);
+    const obsolete = result.superseded_proposals || [];
+    const isObsolete = (item) => obsolete.some((box) => matchingBox(item, box));
+    if (currentProposals.includes(inspectedBox) && isObsolete(inspectedBox)) fitEditorImage();
+    let retained = currentProposals.filter((item) => retainPending(item) && !isObsolete(item));
     const retainedIds = new Set(retained.map((item) => item.proposal_id));
     let superseded = 0;
     proposalDecisions.forEach((item) => { if (item.decision === "pending" && !retainedIds.has(item.proposal_id)) { item.decision = "superseded"; superseded++; } });
     const incoming = [];
     for (const suggestion of result.proposals) {
+      if (isObsolete(suggestion)) continue;
       if (proposalDecisions.some((decision) => decision.decision === "rejected" && Array.isArray(decision.xyxy) &&
         (decision.proposal_id === suggestion.proposal_id || sameControl(decision, suggestion)))) continue;
       const item = {...suggestion};
@@ -958,7 +970,7 @@ function renderSuggestions() {
   document.getElementById("suggestion-list").innerHTML = currentProposals.map((ann, index) => {
     const score = ann.proposal_kind === "native_capture" ? "Native iPad candidate" : ann.confidence !== undefined ? `Model score ${Math.round(ann.confidence * 100)}%` : ann.similarity !== undefined ? `Template similarity ${Math.round(ann.similarity * 100)}%` : ann.proposal_kind === "geometry_recovery" || ann.source === "studio_icon_geometry" ? "Geometry checked" : "Accessibility match";
     return `<div class="ann-item suggestion-item" style="border-left-color:${CLASS_COLORS[ann.class] || "#94a3b8"}">
-      <strong>${escapeHtml(ann.class)}</strong><div class="ann-source">${escapeHtml(score)} · ${escapeHtml(ann.source)}</div>
+      <strong>${escapeHtml(annotationLabel(ann))}</strong><div class="ann-source">${escapeHtml(score)} · ${escapeHtml(ann.source)}</div>
       <div class="ann-source">${ann.action === "replace_geometry" ? "Replace existing box with visible geometry" : escapeHtml(ann.manual_geometry || ann.geometry_policy || visualPolicy(ann.class))}</div>
       <div class="ann-item-coords">[${ann.xyxy.map(Math.round).join(", ")}]</div>
       <div class="review-actions"><button class="btn btn-xs btn-ghost" onclick="zoomToBox(${index}, true)">Zoom</button><button class="btn btn-xs btn-success" onclick="reviewSuggestion(${index}, true)" ${ann.manual_geometry ? "disabled" : ""}>Accept</button><button class="btn btn-xs btn-ghost" onclick="reviewSuggestion(${index}, false)">Reject</button></div></div>`;
